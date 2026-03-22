@@ -1,4 +1,5 @@
 package com.olivertech.orderservice.domain.port.in;
 
-public class ProcessOrderUseCase {
-}
+import com.olivertech.orderservice.application.dto.OrderEvent;
+
+public interface ProcessOrderUseCase   { void execute(OrderEvent event); }

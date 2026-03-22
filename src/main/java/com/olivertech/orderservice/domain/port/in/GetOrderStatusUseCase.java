@@ -1,4 +1,7 @@
 package com.olivertech.orderservice.domain.port.in;
 
-public class GetOrderStatusUseCase {
-}
+import com.olivertech.orderservice.domain.model.OrderStatus;
+
+import java.util.Optional;
+
+public interface GetOrderStatusUseCase { Optional<OrderStatus> execute(String orderId); }
