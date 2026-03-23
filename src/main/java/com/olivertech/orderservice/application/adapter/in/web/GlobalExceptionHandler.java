@@ -34,7 +34,6 @@ public class GlobalExceptionHandler {
                 .map(FieldError::getDefaultMessage).toList());
     }
 
-    // CORREÇÃO: 503 sem vazar detalhes internos do Kafka ao cliente
     @ExceptionHandler(EventPublishingException.class)
     @ResponseStatus(HttpStatus.SERVICE_UNAVAILABLE)
     public Map<String, String> handlePublishingFailure(EventPublishingException ex) {
