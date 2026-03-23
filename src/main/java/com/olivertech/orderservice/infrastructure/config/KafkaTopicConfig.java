@@ -11,7 +11,6 @@ public class KafkaTopicConfig {
 
     private final KafkaProperties props;
 
-    // Injeção via construtor — sem @Value, sem Lombok
     public KafkaTopicConfig(KafkaProperties props) {
         this.props = props;
     }

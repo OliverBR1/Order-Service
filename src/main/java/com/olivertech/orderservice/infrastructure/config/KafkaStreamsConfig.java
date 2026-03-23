@@ -7,7 +7,6 @@ import org.springframework.kafka.annotation.EnableKafkaStreams;
 import org.springframework.kafka.annotation.KafkaStreamsDefaultConfiguration;
 import org.springframework.kafka.config.KafkaStreamsConfiguration;
 
-import java.util.HashMap;
 import java.util.Map;
 
 @Configuration
@@ -15,8 +14,10 @@ import java.util.Map;
 public class KafkaStreamsConfig {
 
     @Bean(name = KafkaStreamsDefaultConfiguration.DEFAULT_STREAMS_CONFIG_BEAN_NAME)
-    public KafkaStreamsConfiguration kafkaStreamsConfig(KafkaProperties props) {
-        Map<String, Object> config = new HashMap<>(props.buildStreamsProperties(null));
+    public KafkaStreamsConfiguration kafkaStreamsConfig(
+            org.springframework.boot.autoconfigure.kafka.KafkaProperties springKafkaProps) {
+
+        Map<String, Object> config = springKafkaProps.getStreams().buildProperties(null);
         config.put(StreamsConfig.PROCESSING_GUARANTEE_CONFIG,
                 StreamsConfig.EXACTLY_ONCE_V2);
         return new KafkaStreamsConfiguration(config);
