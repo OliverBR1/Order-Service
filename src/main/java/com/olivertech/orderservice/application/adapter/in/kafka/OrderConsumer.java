@@ -33,9 +33,6 @@ public class OrderConsumer {
         this.meterRegistry       = meterRegistry;
     }
 
-    // CORREÇÃO: @RetryableTopic — non-blocking, recomendado pela documentação oficial.
-    // Cria automaticamente: orders-topic-retry-0..2 e orders-topic.DLT
-    // A partição principal NÃO é bloqueada durante retries.
     @RetryableTopic(
             attempts = "4",
             backoff = @Backoff(delay = 2000, multiplier = 2.0, maxDelay = 30000),
@@ -47,7 +44,6 @@ public class OrderConsumer {
     @KafkaListener(
             topics = "${kafka.topics.orders}",
             groupId = "${spring.kafka.consumer.group-id}"
-            // CORREÇÃO: containerFactory removido — Spring Boot resolve automaticamente
     )
     public void consume(
             @Payload OrderEvent event,

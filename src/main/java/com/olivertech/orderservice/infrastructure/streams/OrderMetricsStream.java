@@ -23,21 +23,18 @@ public class OrderMetricsStream {
     private static final Logger log =
             LoggerFactory.getLogger(OrderMetricsStream.class);
 
-    // @Bean com parâmetro injetado — substitui @Component + @Autowired (sem Lombok)
     @Bean
     public KStream<String, OrderEvent> ordersStream(StreamsBuilder builder) {
         KStream<String, OrderEvent> ordersStream =
                 builder.stream("orders-topic",
                         Consumed.with(Serdes.String(), new JsonSerde<>(OrderEvent.class)));
 
-        // Conta pedidos por status (KTable stateful)
         KTable<String, Long> ordersByStatus = ordersStream
                 .filter((key, event) -> event != null)
                 .groupBy((key, event) -> event.status().name(),
                         Grouped.with(Serdes.String(), new JsonSerde<>(OrderEvent.class)))
                 .count(Materialized.as("orders-by-status-store"));
 
-        // Soma de valor por cliente (janela de 1 hora)
         ordersStream
                 .filter((key, event) -> event.status() == OrderStatus.PENDING)
                 .groupByKey(Grouped.with(Serdes.String(), new JsonSerde<>(OrderEvent.class)))
@@ -50,7 +47,6 @@ public class OrderMetricsStream {
                                 .withValueSerde(new JsonSerde<>(BigDecimal.class))
                 );
 
-        // Publica métricas no topic de saída
         ordersByStatus.toStream()
                 .mapValues((status, count) -> new OrderMetric(status, count, Instant.now()))
                 .to("order-metrics-topic",

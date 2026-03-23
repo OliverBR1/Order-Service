@@ -47,7 +47,6 @@ public class OrderController {
     public ResponseEntity<OrderStatus> getStatus(
             @Parameter(description = "UUID v4 do pedido")
             @PathVariable
-            // CORREÇÃO: validação do formato para evitar path traversal e injection
             @Pattern(
                     regexp = "^[0-9a-fA-F]{8}-[0-9a-fA-F]{4}-4[0-9a-fA-F]{3}-[89abAB][0-9a-fA-F]{3}-[0-9a-fA-F]{12}$",
                     message = "ID deve ser um UUID v4 válido"

@@ -21,8 +21,6 @@ public class OpenApiConfig {
                         .contact(new Contact()
                                 .name("Time de Engenharia")
                                 .email("eng@empresa.com")))
-                // CORREÇÃO: sem URL hardcoded — Swagger usa o host corrente
-                // automaticamente (funciona em http dev e https prod)
                 .components(new Components()
                         .addSecuritySchemes("bearerAuth",
                                 new SecurityScheme()

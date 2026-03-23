@@ -39,9 +39,6 @@ public class CreateOrderUseCaseImpl implements CreateOrderUseCase {
         writeRepo.save(order);
 
         try {
-            // CORREÇÃO: bloqueia até confirmação do broker.
-            // Se Kafka falhar, EventPublishingException desfaz a transação.
-            // Para consistência total em produção: use Transactional Outbox Pattern.
             publisher.publish(OrderEvent.from(order)).get(10, TimeUnit.SECONDS);
         } catch (ExecutionException | TimeoutException | InterruptedException ex) {
             Thread.currentThread().interrupt();

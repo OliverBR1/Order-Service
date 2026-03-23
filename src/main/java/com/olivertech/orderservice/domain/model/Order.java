@@ -18,7 +18,6 @@ public class Order {
         this.createdAt = createdAt;
     }
 
-    // Factory method para criação de novo pedido
     public static Order create(String customerId, BigDecimal amount) {
         Objects.requireNonNull(customerId, "customerId obrigatório");
         if (amount == null || amount.compareTo(BigDecimal.ZERO) <= 0)
@@ -26,7 +25,6 @@ public class Order {
         return new Order(UUID.randomUUID().toString(), customerId, amount, Instant.now());
     }
 
-    // Factory method para reconstituição a partir de persistência (sem regras de criação)
     public static Order reconstitute(String id, String customerId,
                                      BigDecimal amount, OrderStatus status,
                                      Instant createdAt) {
