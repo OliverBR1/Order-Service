@@ -191,18 +191,43 @@ GET http://localhost:8081/api/orders/{id}/status
 > **Nota:** Os testes unitários não precisam de Docker. São isolados com Mockito.  
 > O teste de integração (`OrderServiceApplicationTests`) usa **Testcontainers** e requer Docker em execução.
 
-### Cobertura de testes
+### Inventário de testes
 
 | Classe de Teste | Tipo | O que valida |
 |---|---|---|
 | `OrderTest` | Unitário | Regras de domínio (criação, transições de status) |
-| `CreateOrderUseCaseImplTest` | Unitário | Criação de pedido, publicação Kafka, validações |
+| `CreateOrderUseCaseImplTest` | Unitário | Criação, publicação Kafka, InterruptedException, validações |
 | `ProcessOrderUseCaseImplTest` | Unitário | Processamento, idempotência, pedido não encontrado |
+| `FindOrderUseCaseImplTest` | Unitário | Busca por ID (encontrado e não encontrado) |
+| `GetOrderStatusUseCaseImplTest` | Unitário | Consulta de status (encontrado e não encontrado) |
 | `OrderControllerTest` | Unitário | Endpoints REST (POST, GET por ID, GET status) |
-| `GlobalExceptionHandlerTest` | Unitário | Mapeamento de exceções para HTTP |
+| `GlobalExceptionHandlerTest` | Unitário | Todos os handlers de exceção → HTTP |
 | `KafkaOrderEventPublisherTest` | Unitário | Publicação Kafka com headers e chave corretos |
-| `OrderConsumerTest` | Unitário | Consumo Kafka, métricas, tratamento de erros |
+| `OrderConsumerTest` | Unitário | Consumo, métricas, erros e DLT handler |
+| `OrderEntityTest` | Unitário | Mapeamento domínio ↔ entidade JPA |
+| `OrderReadRepositoryAdapterTest` | Unitário | findById e existsByIdAndStatus com JPA mockado |
+| `OrderWriteRepositoryAdapterTest` | Unitário | save e updateStatus com JPA mockado |
+| `RootControllerTest` | Unitário | Redirect para Swagger UI |
 | `OrderServiceApplicationTests` | Integração | Context load com PostgreSQL + Kafka reais |
+
+### Cobertura de testes
+
+Cobertura medida com JaCoCo. Resultado geral: **92% de classes** e **98% de linhas** cobertas no projeto.
+
+| Pacote / Classe | Classes | Linhas |
+|---|---|---|
+| **`application`** | **100%** | **100%** |
+| `adapter.in.kafka` | 100% | 100% |
+| `OrderConsumer` | 100% métodos | 100% linhas |
+| `adapter.in.web` | 100% | 100% |
+| `adapter.out` | 100% | 100% |
+| `dto` | 100% | 100% |
+| `usecase` | 100% | 100% |
+| **`domain`** | **100%** | **100%** |
+| **`infrastructure`** | **85%** | **96%** |
+| `OrderServiceApplication` | 0% métodos | 0% linhas |
+
+> `OrderServiceApplication` fica em 0% pois o método `main` não é exercitado pelos testes unitários — é coberto apenas no teste de integração com Testcontainers (`OrderServiceApplicationTests`).
 
 ---
 
