@@ -1,34 +1,24 @@
-package com.olivertech.orderservice.application.adapter.out.persitence;
+package com.olivertech.orderservice.application.adapter.out.persistence;
 
 import com.olivertech.orderservice.domain.model.Order;
 import com.olivertech.orderservice.domain.model.OrderStatus;
 import com.olivertech.orderservice.domain.port.out.OrderReadRepositoryPort;
-import com.olivertech.orderservice.domain.port.out.OrderWriteRepositoryPort;
 import org.springframework.stereotype.Component;
 
 import java.util.Optional;
 
+/**
+ * Adaptador de leitura do repositório de pedidos (SRP: apenas leitura).
+ * Implementa somente OrderReadRepositoryPort.
+ */
 @Component
-public class OrderRepositoryAdapter
-        implements OrderWriteRepositoryPort, OrderReadRepositoryPort {
+public class OrderReadRepositoryAdapter implements OrderReadRepositoryPort {
 
     private final JpaOrderRepository jpaRepository;
 
-    public OrderRepositoryAdapter(JpaOrderRepository jpaRepository) {
+    public OrderReadRepositoryAdapter(JpaOrderRepository jpaRepository) {
         this.jpaRepository = jpaRepository;
     }
-
-
-    @Override
-    public void save(Order order) {
-        jpaRepository.save(OrderEntity.from(order));
-    }
-
-    @Override
-    public void updateStatus(String id, OrderStatus newStatus) {
-        jpaRepository.updateStatus(id, newStatus.name());
-    }
-
 
     @Override
     public Optional<Order> findById(String id) {
@@ -41,3 +31,4 @@ public class OrderRepositoryAdapter
         return jpaRepository.existsByIdAndStatus(id, status.name());
     }
 }
+

@@ -7,10 +7,12 @@ import org.slf4j.Logger;
 import org.slf4j.LoggerFactory;
 import org.springframework.http.HttpStatus;
 import org.springframework.validation.FieldError;
+import org.springframework.web.HttpRequestMethodNotSupportedException;
 import org.springframework.web.bind.MethodArgumentNotValidException;
 import org.springframework.web.bind.annotation.ExceptionHandler;
 import org.springframework.web.bind.annotation.ResponseStatus;
 import org.springframework.web.bind.annotation.RestControllerAdvice;
+import org.springframework.web.servlet.resource.NoResourceFoundException;
 
 import java.util.List;
 import java.util.Map;
@@ -34,6 +36,28 @@ public class GlobalExceptionHandler {
                 .map(FieldError::getDefaultMessage).toList());
     }
 
+    @ExceptionHandler(HttpRequestMethodNotSupportedException.class)
+    @ResponseStatus(HttpStatus.METHOD_NOT_ALLOWED)
+    public Map<String, String> handleMethodNotAllowed(HttpRequestMethodNotSupportedException ex) {
+        String allowed = ex.getSupportedMethods() != null
+                ? String.join(", ", ex.getSupportedMethods())
+                : "desconhecido";
+        return Map.of(
+                "error",   "Método '" + ex.getMethod() + "' não suportado neste endpoint.",
+                "allowed", allowed,
+                "docs",    "/swagger-ui.html"
+        );
+    }
+
+    @ExceptionHandler(NoResourceFoundException.class)
+    @ResponseStatus(HttpStatus.NOT_FOUND)
+    public Map<String, String> handleNoResourceFound(NoResourceFoundException ex) {
+        return Map.of(
+                "error", "Endpoint não encontrado: " + ex.getResourcePath(),
+                "docs",  "/swagger-ui.html"
+        );
+    }
+
     @ExceptionHandler(EventPublishingException.class)
     @ResponseStatus(HttpStatus.SERVICE_UNAVAILABLE)
     public Map<String, String> handlePublishingFailure(EventPublishingException ex) {
@@ -45,5 +69,12 @@ public class GlobalExceptionHandler {
     @ResponseStatus(HttpStatus.NOT_FOUND)
     public Map<String, String> handleOrderNotFound(OrderNotFoundException ex) {
         return Map.of("error", ex.getMessage());
+    }
+
+    @ExceptionHandler(Exception.class)
+    @ResponseStatus(HttpStatus.INTERNAL_SERVER_ERROR)
+    public Map<String, String> handleUnexpected(Exception ex) {
+        log.error("Erro inesperado", ex);
+        return Map.of("error", "Erro interno. Tente novamente mais tarde.");
     }
 }

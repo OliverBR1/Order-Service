@@ -1,4 +1,4 @@
-package com.olivertech.orderservice.application.adapter.out.persitence;
+package com.olivertech.orderservice.application.adapter.out.persistence;
 
 import org.springframework.data.jpa.repository.JpaRepository;
 import org.springframework.data.jpa.repository.Modifying;
@@ -13,3 +13,4 @@ public interface JpaOrderRepository extends JpaRepository<OrderEntity, String> {
 
     boolean existsByIdAndStatus(String id, String status);
 }
+

@@ -1,6 +1,7 @@
 package com.olivertech.orderservice.application.adapter.out.kafka;
 
 import com.olivertech.orderservice.application.dto.OrderEvent;
+import com.olivertech.orderservice.domain.model.Order;
 import com.olivertech.orderservice.domain.port.out.OrderEventPublisherPort;
 import org.apache.kafka.clients.producer.ProducerRecord;
 import org.slf4j.Logger;
@@ -21,7 +22,6 @@ public class KafkaOrderEventPublisher implements OrderEventPublisherPort {
     private final KafkaTemplate<String, OrderEvent> kafkaTemplate;
     private final String topic;
 
-    // @Value no parâmetro do construtor — sem campo mutável, sem Lombok
     public KafkaOrderEventPublisher(
             KafkaTemplate<String, OrderEvent> kafkaTemplate,
             @Value("${kafka.topics.orders}") String topic) {
@@ -29,12 +29,17 @@ public class KafkaOrderEventPublisher implements OrderEventPublisherPort {
         this.topic         = topic;
     }
 
+    /**
+     * Recebe a entidade de domínio Order e faz o mapeamento para OrderEvent (DTO Kafka)
+     * dentro do adaptador — o domínio não precisa conhecer o formato de mensagem.
+     */
     @Override
-    public CompletableFuture<Void> publish(OrderEvent event) {
-        ProducerRecord<String, OrderEvent> record =
-                new ProducerRecord<>(topic, event.orderId(), event);
+    public CompletableFuture<Void> publish(Order order) {
+        OrderEvent event = OrderEvent.from(order);
 
-        // CORREÇÃO: charset explícito — evita corrupção silenciosa em JVMs não-UTF-8
+        ProducerRecord<String, OrderEvent> record =
+                new ProducerRecord<>(topic, order.getId(), event);
+
         record.headers()
                 .add("source",    "order-service".getBytes(StandardCharsets.UTF_8))
                 .add("eventType", "ORDER_CREATED".getBytes(StandardCharsets.UTF_8));
@@ -42,11 +47,10 @@ public class KafkaOrderEventPublisher implements OrderEventPublisherPort {
         return kafkaTemplate.send(record)
                 .thenApply(result -> {
                     log.info("Publicado: orderId={} partition={} offset={}",
-                            event.orderId(),
+                            order.getId(),
                             result.getRecordMetadata().partition(),
                             result.getRecordMetadata().offset());
                     return (Void) null;
                 });
     }
 }
-

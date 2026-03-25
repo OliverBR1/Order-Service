@@ -7,6 +7,7 @@ import io.micrometer.core.instrument.MeterRegistry;
 import io.micrometer.core.instrument.Timer;
 import org.slf4j.Logger;
 import org.slf4j.LoggerFactory;
+import org.springframework.beans.factory.annotation.Value;
 import org.springframework.kafka.annotation.DltHandler;
 import org.springframework.kafka.annotation.KafkaListener;
 import org.springframework.kafka.annotation.RetryableTopic;
@@ -26,6 +27,9 @@ public class OrderConsumer {
 
     private final ProcessOrderUseCase processOrderUseCase;
     private final MeterRegistry meterRegistry;
+
+    @Value("${kafka.topics.orders}")
+    private String ordersTopic;
 
     public OrderConsumer(ProcessOrderUseCase processOrderUseCase,
                          MeterRegistry meterRegistry) {
@@ -54,11 +58,18 @@ public class OrderConsumer {
                 event.orderId(), partition, offset);
 
         Timer.Sample sample = Timer.start(meterRegistry);
-        processOrderUseCase.execute(event);
-        sample.stop(Timer.builder("kafka.consumer.processing.time")
-                .tag("topic", "orders-topic").register(meterRegistry));
-        meterRegistry.counter("kafka.consumer.success",
-                "topic", "orders-topic").increment();
+        try {
+            // Extrai apenas o orderId — o domínio não precisa conhecer OrderEvent
+            processOrderUseCase.execute(event.orderId());
+            sample.stop(meterRegistry.timer("kafka.consumer.processing.time",
+                    "topic", ordersTopic));
+            meterRegistry.counter("kafka.consumer.success",
+                    "topic", ordersTopic).increment();
+        } catch (Exception ex) {
+            meterRegistry.counter("kafka.consumer.error",
+                    "topic", ordersTopic).increment();
+            throw ex;
+        }
     }
 
     @DltHandler

@@ -1,20 +1,16 @@
 package com.olivertech.orderservice.infrastructure.streams;
 
 import com.olivertech.orderservice.application.dto.OrderEvent;
-import com.olivertech.orderservice.domain.model.OrderStatus;
+import com.olivertech.orderservice.infrastructure.config.KafkaProperties;
 import org.apache.kafka.common.serialization.Serdes;
-import org.apache.kafka.common.utils.Bytes;
 import org.apache.kafka.streams.StreamsBuilder;
 import org.apache.kafka.streams.kstream.*;
-import org.apache.kafka.streams.state.WindowStore;
 import org.slf4j.Logger;
 import org.slf4j.LoggerFactory;
 import org.springframework.context.annotation.Bean;
 import org.springframework.context.annotation.Configuration;
 import org.springframework.kafka.support.serializer.JsonSerde;
 
-import java.math.BigDecimal;
-import java.time.Duration;
 import java.time.Instant;
 
 @Configuration
@@ -23,33 +19,31 @@ public class OrderMetricsStream {
     private static final Logger log =
             LoggerFactory.getLogger(OrderMetricsStream.class);
 
+    private final KafkaProperties kafkaProperties;
+
+    public OrderMetricsStream(KafkaProperties kafkaProperties) {
+        this.kafkaProperties = kafkaProperties;
+    }
+
     @Bean
     public KStream<String, OrderEvent> ordersStream(StreamsBuilder builder) {
         KStream<String, OrderEvent> ordersStream =
-                builder.stream("orders-topic",
+                builder.stream(kafkaProperties.topics().orders(),
                         Consumed.with(Serdes.String(), new JsonSerde<>(OrderEvent.class)));
 
-        KTable<String, Long> ordersByStatus = ordersStream
+        /*
+         * Agrega contagem de pedidos por status e publica no tópico de métricas.
+         * Usa apenas um store RocksDB regular (orders-by-status-store) — evita
+         * conflito de tags Prometheus entre stores regular e windowed.
+         */
+        ordersStream
                 .filter((key, event) -> event != null)
                 .groupBy((key, event) -> event.status().name(),
                         Grouped.with(Serdes.String(), new JsonSerde<>(OrderEvent.class)))
-                .count(Materialized.as("orders-by-status-store"));
-
-        ordersStream
-                .filter((key, event) -> event.status() == OrderStatus.PENDING)
-                .groupByKey(Grouped.with(Serdes.String(), new JsonSerde<>(OrderEvent.class)))
-                .windowedBy(TimeWindows.ofSizeWithNoGrace(Duration.ofHours(1)))
-                .aggregate(
-                        () -> BigDecimal.ZERO,
-                        (key, event, acc) -> acc.add(event.amount()),
-                        Materialized.<String, BigDecimal, WindowStore<Bytes, byte[]>>as(
-                                        "revenue-per-customer-store")
-                                .withValueSerde(new JsonSerde<>(BigDecimal.class))
-                );
-
-        ordersByStatus.toStream()
+                .count(Materialized.as("orders-by-status-store"))
+                .toStream()
                 .mapValues((status, count) -> new OrderMetric(status, count, Instant.now()))
-                .to("order-metrics-topic",
+                .to(kafkaProperties.topics().orderMetrics(),
                         Produced.with(Serdes.String(), new JsonSerde<>(OrderMetric.class)));
 
         log.info("Kafka Streams pipeline iniciado");

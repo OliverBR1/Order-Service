@@ -1,8 +1,5 @@
 package com.olivertech.orderservice.application.usecase;
 
-import com.olivertech.orderservice.application.dto.OrderEvent;
-import com.olivertech.orderservice.application.dto.OrderRequest;
-import com.olivertech.orderservice.application.dto.OrderResponse;
 import com.olivertech.orderservice.domain.exception.EventPublishingException;
 import com.olivertech.orderservice.domain.model.Order;
 import com.olivertech.orderservice.domain.port.in.CreateOrderUseCase;
@@ -13,6 +10,7 @@ import org.slf4j.LoggerFactory;
 import org.springframework.stereotype.Service;
 import org.springframework.transaction.annotation.Transactional;
 
+import java.math.BigDecimal;
 import java.util.concurrent.ExecutionException;
 import java.util.concurrent.TimeUnit;
 import java.util.concurrent.TimeoutException;
@@ -34,19 +32,23 @@ public class CreateOrderUseCaseImpl implements CreateOrderUseCase {
 
     @Override
     @Transactional
-    public OrderResponse execute(OrderRequest request) {
-        Order order = Order.create(request.customerId(), request.amount());
+    public Order execute(String customerId, BigDecimal amount) {
+        Order order = Order.create(customerId, amount);
         writeRepo.save(order);
 
         try {
-            publisher.publish(OrderEvent.from(order)).get(10, TimeUnit.SECONDS);
-        } catch (ExecutionException | TimeoutException | InterruptedException ex) {
-            Thread.currentThread().interrupt();
+            // O adaptador Kafka faz o mapeamento Order → OrderEvent internamente
+            publisher.publish(order).get(10, TimeUnit.SECONDS);
+        } catch (InterruptedException ex) {
+            Thread.currentThread().interrupt();  // restore interrupted status
+            throw new EventPublishingException(
+                    "Falha ao publicar evento para orderId=" + order.getId(), ex);
+        } catch (ExecutionException | TimeoutException ex) {
             throw new EventPublishingException(
                     "Falha ao publicar evento para orderId=" + order.getId(), ex);
         }
 
         log.info("Pedido criado: orderId={}", order.getId());
-        return OrderResponse.from(order);
+        return order;
     }
 }

@@ -1,6 +1,5 @@
 package com.olivertech.orderservice.application.usecase;
 
-import com.olivertech.orderservice.application.dto.OrderEvent;
 import com.olivertech.orderservice.domain.exception.OrderNotFoundException;
 import com.olivertech.orderservice.domain.model.Order;
 import com.olivertech.orderservice.domain.model.OrderStatus;
@@ -23,18 +22,19 @@ public class ProcessOrderUseCaseImpl implements ProcessOrderUseCase {
 
     public ProcessOrderUseCaseImpl(OrderReadRepositoryPort readRepo,
                                    OrderWriteRepositoryPort writeRepo) {
-        this.readRepo = readRepo; this.writeRepo = writeRepo;
+        this.readRepo = readRepo;
+        this.writeRepo = writeRepo;
     }
 
     @Override
     @Transactional
-    public void execute(OrderEvent event) {
-        if (readRepo.existsByIdAndStatus(event.orderId(), OrderStatus.PROCESSED)) {
-            log.warn("Evento duplicado ignorado: orderId={}", event.orderId());
+    public void execute(String orderId) {
+        if (readRepo.existsByIdAndStatus(orderId, OrderStatus.PROCESSED)) {
+            log.warn("Evento duplicado ignorado: orderId={}", orderId);
             return;
         }
-        Order order = readRepo.findById(event.orderId())
-                .orElseThrow(() -> new OrderNotFoundException(event.orderId()));
+        Order order = readRepo.findById(orderId)
+                .orElseThrow(() -> new OrderNotFoundException(orderId));
         order.markAsProcessed();
         writeRepo.updateStatus(order.getId(), order.getStatus());
         log.info("Pedido processado: orderId={}", order.getId());

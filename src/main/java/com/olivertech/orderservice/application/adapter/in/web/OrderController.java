@@ -2,8 +2,10 @@ package com.olivertech.orderservice.application.adapter.in.web;
 
 import com.olivertech.orderservice.application.dto.OrderRequest;
 import com.olivertech.orderservice.application.dto.OrderResponse;
+import com.olivertech.orderservice.domain.model.Order;
 import com.olivertech.orderservice.domain.model.OrderStatus;
 import com.olivertech.orderservice.domain.port.in.CreateOrderUseCase;
+import com.olivertech.orderservice.domain.port.in.FindOrderUseCase;
 import com.olivertech.orderservice.domain.port.in.GetOrderStatusUseCase;
 import io.swagger.v3.oas.annotations.Operation;
 import io.swagger.v3.oas.annotations.Parameter;
@@ -22,12 +24,18 @@ import org.springframework.web.bind.annotation.*;
 @Validated
 public class OrderController {
 
-    private final CreateOrderUseCase createOrderUseCase;
+    private static final String UUID_V4_REGEXP =
+            "^[0-9a-fA-F]{8}-[0-9a-fA-F]{4}-4[0-9a-fA-F]{3}-[89abAB][0-9a-fA-F]{3}-[0-9a-fA-F]{12}$";
+
+    private final CreateOrderUseCase    createOrderUseCase;
+    private final FindOrderUseCase      findOrderUseCase;
     private final GetOrderStatusUseCase getOrderStatusUseCase;
 
     public OrderController(CreateOrderUseCase createOrderUseCase,
+                           FindOrderUseCase findOrderUseCase,
                            GetOrderStatusUseCase getOrderStatusUseCase) {
         this.createOrderUseCase    = createOrderUseCase;
+        this.findOrderUseCase      = findOrderUseCase;
         this.getOrderStatusUseCase = getOrderStatusUseCase;
     }
 
@@ -39,18 +47,34 @@ public class OrderController {
     @PostMapping
     @ResponseStatus(HttpStatus.ACCEPTED)
     public OrderResponse createOrder(@Valid @RequestBody OrderRequest request) {
-        return createOrderUseCase.execute(request);
+        Order order = createOrderUseCase.execute(request.customerId(), request.amount());
+        return OrderResponse.from(order);
+    }
+
+    @Operation(summary = "Buscar pedido por ID",
+            description = "Retorna os dados completos de um pedido.")
+    @ApiResponse(responseCode = "200", description = "Pedido encontrado")
+    @ApiResponse(responseCode = "404", description = "Pedido não encontrado")
+    @GetMapping("/{id}")
+    public ResponseEntity<OrderResponse> getOrder(
+            @Parameter(description = "UUID v4 do pedido")
+            @PathVariable
+            @Pattern(regexp = UUID_V4_REGEXP, message = "ID deve ser um UUID v4 válido")
+            String id) {
+        return findOrderUseCase.execute(id)
+                .map(OrderResponse::from)
+                .map(ResponseEntity::ok)
+                .orElse(ResponseEntity.notFound().build());
     }
 
     @Operation(summary = "Consultar status do pedido")
+    @ApiResponse(responseCode = "200", description = "Status encontrado")
+    @ApiResponse(responseCode = "404", description = "Pedido não encontrado")
     @GetMapping("/{id}/status")
     public ResponseEntity<OrderStatus> getStatus(
             @Parameter(description = "UUID v4 do pedido")
             @PathVariable
-            @Pattern(
-                    regexp = "^[0-9a-fA-F]{8}-[0-9a-fA-F]{4}-4[0-9a-fA-F]{3}-[89abAB][0-9a-fA-F]{3}-[0-9a-fA-F]{12}$",
-                    message = "ID deve ser um UUID v4 válido"
-            )
+            @Pattern(regexp = UUID_V4_REGEXP, message = "ID deve ser um UUID v4 válido")
             String id) {
         return getOrderStatusUseCase.execute(id)
                 .map(ResponseEntity::ok)

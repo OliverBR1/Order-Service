@@ -18,6 +18,9 @@ public class KafkaStreamsConfig {
             org.springframework.boot.autoconfigure.kafka.KafkaProperties springKafkaProps) {
 
         Map<String, Object> config = springKafkaProps.getStreams().buildProperties(null);
+        // bootstrap.servers não é herdado automaticamente do nível raiz pelo Streams
+        config.put(StreamsConfig.BOOTSTRAP_SERVERS_CONFIG,
+                String.join(",", springKafkaProps.getBootstrapServers()));
         config.put(StreamsConfig.PROCESSING_GUARANTEE_CONFIG,
                 StreamsConfig.EXACTLY_ONCE_V2);
         return new KafkaStreamsConfiguration(config);

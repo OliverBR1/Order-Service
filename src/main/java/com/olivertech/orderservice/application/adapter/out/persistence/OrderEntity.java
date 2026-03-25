@@ -1,4 +1,4 @@
-package com.olivertech.orderservice.application.adapter.out.persitence;
+package com.olivertech.orderservice.application.adapter.out.persistence;
 
 import com.olivertech.orderservice.domain.model.Order;
 import com.olivertech.orderservice.domain.model.OrderStatus;
@@ -46,3 +46,4 @@ public class OrderEntity {
                 OrderStatus.valueOf(status), createdAt);
     }
 }
+
