@@ -1,434 +1,340 @@
 # Order Service
 
-> Serviço de gerenciamento de pedidos — recebe pedidos via HTTP, processa de forma assíncrona com Apache Kafka e salva no banco de dados PostgreSQL.
+Microsserviço de pedidos construído com **Spring Boot 3.5**, **Apache Kafka** e **PostgreSQL**, seguindo a arquitetura hexagonal (Ports & Adapters).
 
 ---
 
-## Sumário
+## 📋 O que o projeto faz
 
-- [O que este projeto faz?](#o-que-este-projeto-faz)
-- [Como funciona por dentro?](#como-funciona-por-dentro)
-- [Tecnologias utilizadas](#tecnologias-utilizadas)
-- [Estrutura de pastas](#estrutura-de-pastas)
-- [O que você precisa instalar antes](#o-que-você-precisa-instalar-antes)
-- [Configurações do projeto](#configurações-do-projeto)
-- [Passo a passo para rodar o projeto](#passo-a-passo-para-rodar-o-projeto)
-- [Endpoints da API](#endpoints-da-api)
-- [Tópicos do Kafka](#tópicos-do-kafka)
-- [Monitoramento](#monitoramento)
-- [Rodando os testes](#rodando-os-testes)
-- [Ambientes (dev vs produção)](#ambientes-dev-vs-produção)
-
----
-
-## O que este projeto faz?
-
-O **Order Service** é um microsserviço responsável por **receber e processar pedidos**. Em termos simples:
-
-1. Um cliente (outro sistema ou você via Swagger) **envia um pedido** com o ID do cliente e o valor
-2. O serviço **salva o pedido** no banco de dados com o status `PENDING` (pendente)
-3. Um evento é **publicado no Kafka** — pense no Kafka como uma fila de mensagens
-4. O próprio serviço **lê essa fila** e marca o pedido como `PROCESSED` (processado)
-5. Se algo falhar, o sistema **tenta novamente automaticamente** até 4 vezes antes de desistir
-
----
-
-## Como funciona por dentro?
-
-O projeto segue a **Arquitetura Hexagonal**, que é uma forma de organizar o código para que as regras de negócio (o "núcleo") não dependam de detalhes externos como banco de dados ou Kafka. Isso facilita testes e manutenção.
-
-```
-                     ┌──────────────────────────┐
-  Você/outro         │   NÚCLEO DO SISTEMA       │
-  sistema    ──────► │                           │ ──────► Banco de dados
-  (REST/HTTP)        │  Regras de negócio:       │         (PostgreSQL)
-                     │  - Criar pedido           │
-  Kafka       ──────► │  - Processar pedido      │ ──────► Kafka
-  (fila)             │  - Consultar status       │         (publicar evento)
-                     └──────────────────────────┘
-                              │
-                     ┌────────▼──────────────────┐
-                     │  Kafka Streams             │
-                     │  (calcula métricas em      │
-                     │  tempo real automaticamente)│
-                     └───────────────────────────┘
-```
-
-### O que acontece quando você cria um pedido?
-
-```
-1. Você envia:  POST /api/orders  { "customerId": "abc", "amount": 100 }
-                        │
-2. O serviço salva no banco de dados  (status: PENDING)
-                        │
-3. O serviço publica um evento no Kafka  (fila: orders-topic)
-                        │
-4. Retorna imediatamente:  202 Accepted  { "orderId": "...", "status": "PENDING" }
-
---- em paralelo, de forma assíncrona ---
-
-5. O Kafka Consumer lê o evento da fila
-                        │
-6. Atualiza o status no banco para PROCESSED
-                        │
-7. Se der erro → tenta mais 3 vezes → se ainda falhar → vai para o DLT (fila de mortos)
-```
-
----
-
-## Tecnologias utilizadas
-
-| Tecnologia | Para que serve neste projeto |
+| Funcionalidade | Descrição |
 |---|---|
-| **Java 21** | Linguagem de programação |
-| **Spring Boot 3.5** | Framework que facilita criar APIs em Java |
-| **Apache Kafka** | Fila de mensagens assíncrona — garante que os eventos não se percam |
-| **Kafka Streams** | Processa os eventos do Kafka em tempo real para gerar métricas |
-| **PostgreSQL 16** | Banco de dados relacional onde os pedidos são salvos |
-| **Spring Data JPA** | Camada que facilita salvar e buscar dados no banco |
-| **Micrometer + Prometheus** | Coleta métricas da aplicação (tempo de resposta, erros, etc.) |
-| **SpringDoc / Swagger** | Gera automaticamente uma página web para testar a API |
-| **Docker** | Permite rodar o Kafka e o PostgreSQL sem instalar nada manualmente |
+| **Criar pedido** | Recebe um pedido via REST, persiste no banco e publica um evento no Kafka |
+| **Buscar pedido** | Retorna os dados completos de um pedido pelo ID |
+| **Consultar status** | Retorna apenas o status atual de um pedido pelo ID |
+| **Processar pedido** | Consome o evento Kafka e atualiza o status para `PROCESSED` |
+| **Métricas em tempo real** | Pipeline Kafka Streams que agrega pedidos por status |
+| **Retry automático** | Tentativas com backoff exponencial + Dead Letter Topic (DLT) |
+| **Observabilidade** | Métricas Prometheus via Actuator |
 
 ---
 
-## Estrutura de pastas
-
-Abaixo as pastas mais importantes e o que cada uma contém:
+## 🏗️ Arquitetura
 
 ```
 src/main/java/com/olivertech/orderservice/
-│
-├── domain/                  ← O "coração" do sistema. Sem Spring, sem banco, sem Kafka.
-│   ├── model/               │  Só as regras de negócio puras.
-│   │   ├── Order.java       │  Representa um pedido
-│   │   └── OrderStatus.java │  PENDING, PROCESSED ou FAILED
-│   └── port/
-│       ├── in/              │  O que o sistema aceita fazer (casos de uso)
-│       └── out/             │  O que o sistema precisa de fora (banco, kafka)
-│
-├── application/
-│   ├── usecase/             ← Implementação dos casos de uso (criar, processar, consultar)
-│   ├── dto/                 ← Objetos que trafegam na API (request, response, evento)
-│   └── adapter/
-│       ├── in/web/          ← Controller REST (recebe chamadas HTTP)
-│       ├── in/kafka/        ← Consumer Kafka (lê da fila)
-│       └── out/             ← Adapters de saída: banco de dados e Kafka producer
-│
-└── infrastructure/
-    ├── config/              ← Configurações do Kafka (tópicos, propriedades, serdes)
-    └── streams/             ← Pipeline de métricas em tempo real com Kafka Streams
+├── domain/                     # Regras de negócio puras (sem Spring)
+│   ├── model/                  # Order, OrderStatus
+│   ├── exception/              # OrderNotFoundException, EventPublishingException
+│   ├── port/in/                # Interfaces de entrada (use cases)
+│   │   ├── CreateOrderUseCase
+│   │   ├── FindOrderUseCase    ← busca pedido completo por ID
+│   │   ├── GetOrderStatusUseCase
+│   │   └── ProcessOrderUseCase
+│   └── port/out/               # Interfaces de saída (repositório, Kafka)
+│       ├── OrderReadRepositoryPort
+│       ├── OrderWriteRepositoryPort
+│       └── OrderEventPublisherPort
+├── application/                # Implementação dos use cases
+│   ├── usecase/                # CreateOrder, FindOrder, ProcessOrder, GetOrderStatus
+│   ├── adapter/in/             # HTTP (REST) e Kafka Consumer
+│   ├── adapter/out/            # Kafka Producer e JPA Repository
+│   └── dto/                    # OrderRequest, OrderResponse, OrderEvent
+└── infrastructure/             # Configurações técnicas
+    ├── config/                 # Kafka, OpenAPI, Topics
+    └── streams/                # Pipeline Kafka Streams de métricas
+```
+
+### Fluxo completo de um pedido
+
+```
+Cliente → POST /api/orders
+            ↓
+    CreateOrderUseCase
+    ├── Persiste no PostgreSQL (status=PENDING)
+    └── Publica evento no Kafka (orders-topic)
+            ↓
+    OrderConsumer (Kafka Listener)
+            ↓
+    ProcessOrderUseCase
+    └── Atualiza status para PROCESSED no PostgreSQL
+
+Cliente → GET /api/orders/{id}
+            ↓
+    FindOrderUseCase → retorna dados completos do pedido
 ```
 
 ---
 
-## O que você precisa instalar antes
+## 🔧 Pré-requisitos
 
-Antes de rodar o projeto, instale:
+Antes de rodar o projeto, você precisa ter instalado:
 
-### 1. Java 21
-- Acesse: https://adoptium.net/
-- Baixe o **JDK 21** para o seu sistema operacional
-- Após instalar, confirme no terminal:
-  ```bash
-  java -version
-  # Deve mostrar: openjdk version "21..."
-  ```
-
-### 2. Docker Desktop
-- Acesse: https://www.docker.com/products/docker-desktop/
-- Instale e **abra o Docker Desktop** antes de continuar
-- Confirme que está rodando:
-  ```bash
-  docker -v
-  # Deve mostrar: Docker version 2x.x.x...
-  ```
-
-> **Por que o Docker?** Ele vai rodar o PostgreSQL e o Kafka automaticamente em containers, sem que você precise instalar essas ferramentas manualmente na sua máquina.
+- **Java 21** ([Download](https://adoptium.net/))
+- **Docker Desktop** ([Download](https://www.docker.com/products/docker-desktop/))
+- **Maven 3.9+** (ou use o `./mvnw` incluído no projeto)
 
 ---
 
-## Configurações do projeto
+## 🚀 Como executar o projeto
 
-O projeto já vem configurado para rodar localmente sem precisar definir nada. As configurações padrão são:
+### Passo 1 — Suba o banco de dados e o Kafka
 
-| O que é | Valor padrão | Onde fica |
-|---|---|---|
-| Endereço do banco | `localhost:5432` | `application.properties` |
-| Nome do banco | `orderdb` | `docker-compose.yml` |
-| Usuário do banco | variável `PGUSER` | arquivo `.env` (você vai criar) |
-| Senha do banco | variável `PGPASSWORD` | arquivo `.env` (você vai criar) |
-| Endereço do Kafka | `localhost:9092` | `application.properties` |
+```bash
+docker-compose up -d
+```
 
----
+Aguarde todos os serviços ficarem saudáveis (leva ~30 segundos para o Kafka):
 
-## Passo a passo para rodar o projeto
+```bash
+docker-compose ps
+# Aguarde todos os STATUS mostrarem "healthy"
+```
 
-### Passo 1 — Clone ou abra o projeto
+> **Nota:** O arquivo `src/main/resources/application.properties` já contém todos os valores padrão para desenvolvimento local (porta `5433`, usuário `postgres`, Kafka em `localhost:9092`). Nenhuma configuração extra é necessária para rodar localmente.
 
-Abra o terminal na pasta raiz do projeto (onde fica o arquivo `pom.xml`).
+### Passo 2 — Execute a aplicação
 
-### Passo 2 — Crie o arquivo `.env`
-
-Este arquivo guarda as credenciais do banco de dados. Crie-o na raiz do projeto:
-
-**Windows (PowerShell):**
 ```powershell
-"PGUSER=postgres" | Out-File -Encoding utf8 .env
-"PGPASSWORD=postgres" | Add-Content .env
-```
-
-**Linux / macOS:**
-```bash
-echo "PGUSER=postgres" > .env
-echo "PGPASSWORD=postgres" >> .env
-```
-
-> O arquivo `.env` deve ficar na mesma pasta que o `docker-compose.yml`.
-
-### Passo 3 — Suba o banco de dados e o Kafka
-
-```bash
-docker compose up -d
-```
-
-Aguarde alguns segundos. Para confirmar que tudo subiu:
-
-```bash
-docker compose ps
-```
-
-Você deve ver 3 serviços com o status **running**:
-
-| Container | Porta | O que é |
-|---|---|---|
-| `postgres` | `5432` | Banco de dados |
-| `kafka` | `9092` | Broker de mensagens |
-| `kafka-ui` | `8090` | Painel web do Kafka |
-
-> ⚠️ **Problema ao subir?** Verifique se o Docker Desktop está aberto e se as portas 5432, 9092 e 8090 não estão sendo usadas por outro programa.
-
-### Passo 4 — Inicie a aplicação
-
-**Windows:**
-```powershell
+# Windows PowerShell
 .\mvnw.cmd spring-boot:run
 ```
 
-**Linux / macOS:**
-```bash
-./mvnw spring-boot:run
-```
-
-> A primeira execução pode demorar alguns minutos pois o Maven irá baixar as dependências.
-
-Quando a aplicação estiver pronta, você verá no terminal algo como:
-```
-Started OrderServiceApplication in X.XXX seconds
-```
-
-### Passo 5 — Verifique se está funcionando
-
-Abra o terminal e execute:
-
-```bash
-curl http://localhost:8080/actuator/health
-```
-
-Se a resposta for `{"status":"UP"}`, está tudo certo! ✅
+A aplicação iniciará na porta **8081**.
 
 ---
 
-## Acessando as ferramentas
+## 🌐 Acessando as interfaces
 
-| Ferramenta | URL | O que você pode fazer |
+| Interface | URL | Descrição |
 |---|---|---|
-| **Swagger UI** | http://localhost:8080/swagger-ui.html | Testar a API direto no navegador |
-| **Kafka UI** | http://localhost:8090 | Ver mensagens nas filas, monitorar consumers |
-| **Health Check** | http://localhost:8080/actuator/health | Ver se a aplicação está saudável |
-| **Métricas** | http://localhost:8080/actuator/metrics | Ver métricas de performance |
+| **API REST** | http://localhost:8081/api/orders | Endpoints de pedidos |
+| **Swagger UI** | http://localhost:8081/swagger-ui.html | Documentação interativa da API |
+| **Actuator Health** | http://localhost:8081/actuator/health | Status da aplicação |
+| **Métricas Prometheus** | http://localhost:8081/actuator/prometheus | Métricas para monitoramento |
+| **Kafka UI** | http://localhost:8090 | Painel visual dos tópicos Kafka |
 
 ---
 
-## Endpoints da API
+## 📡 Endpoints da API
 
 ### Criar um pedido
 
-```
-POST http://localhost:8080/api/orders
-```
+```http
+POST http://localhost:8081/api/orders
+Content-Type: application/json
 
-**Corpo da requisição (JSON):**
-```json
 {
-  "customerId": "cust-abc-123",
+  "customerId": "cliente-123",
   "amount": 299.90
 }
 ```
 
-| Campo | Obrigatório | Descrição |
-|---|---|---|
-| `customerId` | Sim | Identificador do cliente (qualquer texto não vazio) |
-| `amount` | Sim | Valor do pedido em reais — deve ser maior que zero |
-
-**Resposta de sucesso — `202 Accepted`:**
+**Resposta (202 Accepted):**
 ```json
 {
   "orderId": "550e8400-e29b-41d4-a716-446655440000",
-  "status": "PENDING"
+  "customerId": "cliente-123",
+  "amount": 299.90,
+  "status": "PENDING",
+  "createdAt": "2026-03-25T13:00:00Z"
 }
 ```
 
-> O status começa como `PENDING` e muda para `PROCESSED` em instantes, após o Kafka processar o evento.
+---
 
-**Erros possíveis:**
+### Buscar pedido completo
 
-| Código HTTP | Significa |
-|---|---|
-| `400 Bad Request` | Algum campo está faltando ou inválido |
-| `503 Service Unavailable` | O Kafka está temporariamente fora do ar |
+```http
+GET http://localhost:8081/api/orders/{id}
+```
+
+**Resposta (200 OK):**
+```json
+{
+  "orderId": "550e8400-e29b-41d4-a716-446655440000",
+  "customerId": "cliente-123",
+  "amount": 299.90,
+  "status": "PROCESSED",
+  "createdAt": "2026-03-25T13:00:00Z"
+}
+```
+
+**Resposta (404 Not Found)** — quando o ID não existe.
 
 ---
 
-### Consultar o status de um pedido
+### Consultar apenas o status do pedido
 
-```
-GET http://localhost:8080/api/orders/{id}/status
-```
-
-Substitua `{id}` pelo UUID retornado na criação do pedido.
-
-**Exemplo:**
-```
-GET http://localhost:8080/api/orders/550e8400-e29b-41d4-a716-446655440000/status
+```http
+GET http://localhost:8081/api/orders/{id}/status
 ```
 
-**Resposta de sucesso — `200 OK`:**
-```json
+**Resposta (200 OK):**
+```
 "PROCESSED"
 ```
 
-**Resposta quando não encontrado — `404 Not Found`:** pedido com este ID não existe.
-
-> O `id` precisa ser um UUID v4 válido (formato: `xxxxxxxx-xxxx-4xxx-xxxx-xxxxxxxxxxxx`).
+**Resposta (404 Not Found)** — quando o ID não existe.
 
 ---
 
-### Testando pelo Swagger (mais fácil)
-
-Acesse **http://localhost:8080/swagger-ui.html** no navegador.
-Você verá uma interface visual onde pode preencher os campos e clicar em **Execute** para testar os endpoints sem precisar do terminal.
-
----
-
-## Tópicos do Kafka
-
-O Kafka organiza as mensagens em **tópicos** (pense como "canais" ou "filas com nome"). Este projeto usa:
-
-| Tópico | Para que serve |
-|---|---|
-| `orders-topic` | Recebe o evento quando um pedido é criado |
-| `orders-topic-retry-0` | Se o processamento falhar, a mensagem vai aqui (1ª nova tentativa) |
-| `orders-topic-retry-1` | 2ª nova tentativa |
-| `orders-topic-retry-2` | 3ª nova tentativa |
-| `orders-topic.DLT` | **Dead Letter Topic** — se falhar 4 vezes, a mensagem fica aqui para análise |
-| `order-metrics-topic` | Métricas geradas pelo Kafka Streams (quantidade por status, receita, etc.) |
-
-### Como funciona o retry (nova tentativa automática)?
-
-```
-Processamento falhou na 1ª vez
-    └─► Aguarda 2 segundos → tenta de novo
-            └─► Falhou de novo → aguarda 4 segundos → tenta de novo
-                    └─► Falhou de novo → aguarda 8 segundos → tenta de novo
-                            └─► Falhou de novo → vai para o DLT (para análise manual)
-```
-
-> Se o erro for de **formato inválido da mensagem** (desserialização), ela vai direto para o DLT — não adianta tentar de novo.
-
-Você pode ver as mensagens no DLT acessando o **Kafka UI** em http://localhost:8090.
-
----
-
-## Monitoramento
-
-### Status da aplicação
-
-```
-GET http://localhost:8080/actuator/health
-```
-
-Mostra se a aplicação e suas dependências (banco, kafka) estão funcionando.
-
-### Métricas coletadas automaticamente
-
-| Métrica | O que mede |
-|---|---|
-| `kafka.consumer.processing.time` | Quanto tempo leva para processar cada mensagem do Kafka |
-| `kafka.consumer.success` | Quantas mensagens foram processadas com sucesso |
-| `kafka.consumer.dlt` | Quantas mensagens foram para o Dead Letter Topic |
-| `http.server.requests` | Tempo e volume das chamadas à API REST |
-
-Todas as métricas estão disponíveis em formato Prometheus em:
-```
-GET http://localhost:8080/actuator/prometheus
-```
-
----
-
-## Rodando os testes
+## 🧪 Executando os testes
 
 ```powershell
-# Windows
+# Todos os testes (unitários + integração com Testcontainers)
 .\mvnw.cmd test
 
-# Linux / macOS
-./mvnw test
+# Apenas uma classe de teste
+.\mvnw.cmd test -Dtest=CreateOrderUseCaseImplTest
 ```
 
-> ⚠️ **O Docker precisa estar rodando** para os testes funcionarem, pois eles sobem containers reais de PostgreSQL e Kafka automaticamente via **Testcontainers**.
+> **Nota:** Os testes unitários não precisam de Docker. São isolados com Mockito.  
+> O teste de integração (`OrderServiceApplicationTests`) usa **Testcontainers** e requer Docker em execução.
 
-Os testes verificam:
-- **Testes unitários** — as regras de negócio funcionam corretamente (sem banco, sem Kafka)
-- **Testes de integração** — o fluxo completo funciona com banco e Kafka reais
+### Cobertura de testes
+
+| Classe de Teste | Tipo | O que valida |
+|---|---|---|
+| `OrderTest` | Unitário | Regras de domínio (criação, transições de status) |
+| `CreateOrderUseCaseImplTest` | Unitário | Criação de pedido, publicação Kafka, validações |
+| `ProcessOrderUseCaseImplTest` | Unitário | Processamento, idempotência, pedido não encontrado |
+| `OrderControllerTest` | Unitário | Endpoints REST (POST, GET por ID, GET status) |
+| `GlobalExceptionHandlerTest` | Unitário | Mapeamento de exceções para HTTP |
+| `KafkaOrderEventPublisherTest` | Unitário | Publicação Kafka com headers e chave corretos |
+| `OrderConsumerTest` | Unitário | Consumo Kafka, métricas, tratamento de erros |
+| `OrderServiceApplicationTests` | Integração | Context load com PostgreSQL + Kafka reais |
 
 ---
 
-## Ambientes (dev vs produção)
+## 🐳 Serviços Docker
 
-O projeto tem dois ambientes configurados:
+| Serviço | Porta | Descrição |
+|---|---|---|
+| PostgreSQL | `5433` | Banco de dados principal |
+| Kafka | `9092` | Broker de mensagens (KRaft, sem Zookeeper) |
+| Kafka UI | `8090` | Painel web de administração do Kafka |
 
-### Desenvolvimento (padrão)
-- Ativo quando você roda normalmente com `spring-boot:run`
-- O banco de dados é **recriado do zero** a cada reinício (`ddl-auto=create`)
-- O Swagger fica **habilitado**
-- As variáveis de conexão têm valores padrão (não precisam ser definidas obrigatoriamente)
+### Comandos úteis do Docker
 
-> ⚠️ No ambiente de desenvolvimento, todos os dados do banco são apagados a cada reinício da aplicação!
+```powershell
+# Subir todos os serviços em background
+docker-compose up -d
 
-### Produção
-- Ativo quando você define `SPRING_PROFILES_ACTIVE=prod`
-- O banco **não é recriado** — apenas valida se o schema está correto (`ddl-auto=validate`)
-- O Swagger fica **desabilitado** (por segurança)
-- Todas as variáveis de ambiente são **obrigatórias** (sem valores padrão)
+# Ver logs em tempo real
+docker-compose logs -f kafka
 
-Para rodar em modo produção:
-```bash
-java -jar target/order-service-0.0.1-SNAPSHOT.jar --spring.profiles.active=prod
+# Parar todos os serviços
+docker-compose down
+
+# Parar e apagar todos os dados (banco incluído)
+docker-compose down -v
 ```
 
 ---
 
-## Parando tudo
+## ⚙️ Configurações principais
 
-Para parar a aplicação, pressione `Ctrl + C` no terminal onde ela está rodando.
+As configurações ficam em `src/main/resources/application.properties`.
 
-Para parar os containers Docker:
+| Propriedade | Padrão | Descrição |
+|---|---|---|
+| `server.port` | `8081` | Porta da aplicação |
+| `spring.kafka.bootstrap-servers` | `localhost:9092` | Endereço do Kafka |
+| `spring.datasource.url` | `jdbc:postgresql://localhost:5433/orderdb` | Banco de dados |
+| `kafka.topics.orders` | `orders-topic` | Tópico principal de pedidos |
+| `kafka.partitions` | `3` | Número de partições dos tópicos |
+| `kafka.replicas` | `1` | Fator de replicação (1 para dev local) |
 
+Para produção, use o perfil `prod` com variáveis de ambiente (veja `application-prod.properties`):
 ```bash
-# Para os containers (mantém os dados do banco)
-docker compose down
+KAFKA_BOOTSTRAP_SERVERS=kafka:9092
+DB_URL=jdbc:postgresql://postgres:5432/orderdb
+PGUSER=usuario
+PGPASSWORD=senha_segura
+```
 
-# Para os containers E apaga todos os dados do banco
-docker compose down -v
+---
+
+## 📊 Tópicos Kafka
+
+| Tópico | Descrição |
+|---|---|
+| `orders-topic` | Eventos de pedidos criados |
+| `orders-topic.DLT` | Dead Letter Topic — pedidos que falharam após todas as retentativas |
+| `orders-topic-0` | Fila de retry 1 (backoff: 2s) |
+| `orders-topic-1` | Fila de retry 2 (backoff: 4s) |
+| `orders-topic-2` | Fila de retry 3 (backoff: 8s) |
+| `order-metrics-topic` | Métricas agregadas por status (via Kafka Streams) |
+
+> Os nomes `orders-topic-0/1/2` seguem a convenção gerada automaticamente pelo `@RetryableTopic` com `TopicSuffixingStrategy.SUFFIX_WITH_INDEX_VALUE`.
+
+---
+
+## 🔄 Política de Retry
+
+Quando o consumo falha, o sistema tenta novamente automaticamente:
+
+| Tentativa | Aguarda |
+|---|---|
+| 1ª (original) | imediatamente |
+| 2ª (`orders-topic-0`) | 2 segundos |
+| 3ª (`orders-topic-1`) | 4 segundos |
+| 4ª (`orders-topic-2`) | 8 segundos (máx. 30s) |
+| DLT | Após esgotar todas as tentativas |
+
+Exceções de desserialização (`DeserializationException`, `JsonParseException`) são enviadas diretamente ao DLT sem retentativas.
+
+---
+
+## 🏥 Health Check
+
+```powershell
+Invoke-RestMethod http://localhost:8081/actuator/health
+```
+
+Resposta esperada:
+```json
+{
+  "status": "UP",
+  "components": {
+    "db": { "status": "UP" },
+    "kafka": { "status": "UP" }
+  }
+}
+```
+
+---
+
+## 🛠️ Troubleshooting
+
+### Aplicação não inicia — erro de banco de dados
+
+Verifique se o PostgreSQL está rodando:
+```powershell
+docker-compose ps postgres
+# O status deve ser "healthy"
+```
+
+### Aplicação não inicia — erro de Kafka
+
+Verifique se o Kafka está rodando:
+```powershell
+docker-compose ps kafka
+# O status deve ser "healthy" (pode demorar ~30s)
+```
+
+### Porta já em uso
+
+A aplicação usa a porta `8081`. Se houver conflito:
+```powershell
+# Encontra o processo na porta 8081
+netstat -ano | findstr :8081
+# Encerre o processo com o PID encontrado
+Stop-Process -Id <PID>
+```
+
+### Limpeza de build corrompido (classes stale)
+
+```powershell
+.\mvnw.cmd clean package
 ```
