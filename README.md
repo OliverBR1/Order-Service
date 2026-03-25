@@ -69,7 +69,7 @@ Cliente → GET /api/orders/{id}
 
 Antes de rodar o projeto, você precisa ter instalado:
 
-- **Java 21** ([Download](https://adoptium.net/))
+- **Java 21** ([Download](https://adoptium.net/pt-BR/temurin/releases?version=21&os=any&arch=any))
 - **Docker Desktop** ([Download](https://www.docker.com/products/docker-desktop/))
 - **Maven 3.9+** (ou use o `./mvnw` incluído no projeto)
 
