@@ -1,7 +1,5 @@
 package com.olivertech.orderservice.application;
 
-import com.olivertech.orderservice.application.dto.OrderEvent;
-import com.olivertech.orderservice.application.dto.OrderRequest;
 import com.olivertech.orderservice.application.usecase.CreateOrderUseCaseImpl;
 import com.olivertech.orderservice.domain.exception.EventPublishingException;
 import com.olivertech.orderservice.domain.model.Order;
@@ -28,57 +26,67 @@ import static org.mockito.Mockito.*;
 @DisplayName("CreateOrderUseCaseImpl")
 class CreateOrderUseCaseImplTest {
 
-    @Mock
-    OrderWriteRepositoryPort writeRepo;
-    @Mock
-    OrderEventPublisherPort publisher;
-    @InjectMocks
-    CreateOrderUseCaseImpl useCase;
-    @Captor ArgumentCaptor<Order>       orderCaptor;
-    @Captor
-    ArgumentCaptor<OrderEvent> eventCaptor;
+    @Mock OrderWriteRepositoryPort writeRepo;
+    @Mock OrderEventPublisherPort  publisher;
+    @InjectMocks CreateOrderUseCaseImpl useCase;
+
+    @Captor ArgumentCaptor<Order> orderCaptor;
 
     @BeforeEach
     void setup() {
-        when(publisher.publish(any()))
+        lenient().when(publisher.publish(any(Order.class)))
                 .thenReturn(CompletableFuture.completedFuture(null));
     }
 
-    @Test void shouldSaveBeforePublishing() {
-        InOrder order = inOrder(writeRepo, publisher);
-        useCase.execute(new OrderRequest("c", BigDecimal.TEN));
-        order.verify(writeRepo).save(any(Order.class));
-        order.verify(publisher).publish(any(OrderEvent.class));
+    @Test
+    void shouldSaveBeforePublishing() {
+        InOrder inOrder = inOrder(writeRepo, publisher);
+        useCase.execute("c", BigDecimal.TEN);
+        inOrder.verify(writeRepo).save(any(Order.class));
+        inOrder.verify(publisher).publish(any(Order.class));
     }
+
     @Test
     void shouldReturnPendingStatus() {
-        assertThat(useCase.execute(new OrderRequest("c", BigDecimal.TEN)).status())
-                .isEqualTo(OrderStatus.PENDING);
+        Order order = useCase.execute("c", BigDecimal.TEN);
+        assertThat(order.getStatus()).isEqualTo(OrderStatus.PENDING);
     }
-    @Test void shouldPublishEventWithSameIdAsSavedOrder() {
-        useCase.execute(new OrderRequest("c", BigDecimal.TEN));
+
+    @Test
+    void shouldPublishEventWithSameIdAsSavedOrder() {
+        useCase.execute("c", BigDecimal.TEN);
         verify(writeRepo).save(orderCaptor.capture());
-        verify(publisher).publish(eventCaptor.capture());
-        assertThat(eventCaptor.getValue().orderId())
-                .isEqualTo(orderCaptor.getValue().getId());
+        verify(publisher).publish(orderCaptor.capture());
+        // ambos os captures devem ter o mesmo id
+        assertThat(orderCaptor.getAllValues().get(0).getId())
+                .isEqualTo(orderCaptor.getAllValues().get(1).getId());
     }
-    @Test void shouldRejectNullCustomerId() {
+
+    @Test
+    void shouldRejectNullCustomerId() {
         assertThatNullPointerException()
-                .isThrownBy(() -> useCase.execute(new OrderRequest(null, BigDecimal.TEN)));
+                .isThrownBy(() -> useCase.execute(null, BigDecimal.TEN));
         verifyNoInteractions(writeRepo, publisher);
     }
-    @Test void shouldRejectNegativeAmount() {
-        assertThatThrownBy(() -> useCase.execute(new OrderRequest("c", new BigDecimal("-1"))))
+
+    @Test
+    void shouldRejectNegativeAmount() {
+        assertThatThrownBy(() -> useCase.execute("c", new BigDecimal("-1")))
                 .isInstanceOf(IllegalArgumentException.class);
     }
-    @Test void shouldThrowEventPublishingExceptionOnKafkaFailure() {
-        when(publisher.publish(any()))
+
+    @Test
+    void shouldThrowEventPublishingExceptionOnKafkaFailure() {
+        when(publisher.publish(any(Order.class)))
                 .thenReturn(CompletableFuture.failedFuture(new RuntimeException("Broker down")));
-        assertThatThrownBy(() -> useCase.execute(new OrderRequest("c", BigDecimal.TEN)))
+        assertThatThrownBy(() -> useCase.execute("c", BigDecimal.TEN))
                 .isInstanceOf(EventPublishingException.class);
     }
-    @Test void shouldNotPersistWhenDomainValidationFails() {
-        assertThatThrownBy(() -> useCase.execute(new OrderRequest(null, BigDecimal.TEN)));
-        verifyNoInteractions(writeRepo);
+
+    @Test
+    void shouldNotPersistWhenDomainValidationFails() {
+        assertThatThrownBy(() -> useCase.execute("c", BigDecimal.ZERO))
+                .isInstanceOf(IllegalArgumentException.class);
+        verifyNoInteractions(writeRepo, publisher);
     }
 }

@@ -3,8 +3,10 @@ package com.olivertech.orderservice.application.adapter.in.web;
 import com.olivertech.orderservice.application.dto.OrderRequest;
 import com.olivertech.orderservice.application.dto.OrderResponse;
 import com.olivertech.orderservice.domain.exception.EventPublishingException;
+import com.olivertech.orderservice.domain.model.Order;
 import com.olivertech.orderservice.domain.model.OrderStatus;
 import com.olivertech.orderservice.domain.port.in.CreateOrderUseCase;
+import com.olivertech.orderservice.domain.port.in.FindOrderUseCase;
 import com.olivertech.orderservice.domain.port.in.GetOrderStatusUseCase;
 import org.junit.jupiter.api.Test;
 import org.junit.jupiter.api.extension.ExtendWith;
@@ -19,38 +21,67 @@ import java.util.Optional;
 import static org.assertj.core.api.AssertionsForClassTypes.assertThat;
 import static org.assertj.core.api.AssertionsForClassTypes.assertThatThrownBy;
 import static org.mockito.ArgumentMatchers.any;
+import static org.mockito.ArgumentMatchers.anyString;
 import static org.mockito.Mockito.verifyNoInteractions;
 import static org.mockito.Mockito.when;
 
 @ExtendWith(MockitoExtension.class)
 class OrderControllerTest {
 
-    @Mock
-    CreateOrderUseCase createUC;
-    @Mock
-    GetOrderStatusUseCase getStatusUC;
-    @InjectMocks
-    OrderController controller;
+    @Mock CreateOrderUseCase    createUC;
+    @Mock FindOrderUseCase      findUC;
+    @Mock GetOrderStatusUseCase getStatusUC;
+    @InjectMocks OrderController controller;
 
     @Test
     void shouldDelegateCreateToUseCase() {
-        OrderRequest  req  = new OrderRequest("c", BigDecimal.TEN);
-        OrderResponse resp = new OrderResponse("id-1", OrderStatus.PENDING);
-        when(createUC.execute(req)).thenReturn(resp);
-        assertThat(controller.createOrder(req)).isEqualTo(resp);
-        verifyNoInteractions(getStatusUC);
+        Order order = Order.create("c", BigDecimal.TEN);
+        when(createUC.execute(anyString(), any(BigDecimal.class))).thenReturn(order);
+
+        OrderResponse resp = controller.createOrder(new OrderRequest("c", BigDecimal.TEN));
+
+        assertThat(resp.orderId()).isEqualTo(order.getId());
+        assertThat(resp.status()).isEqualTo(OrderStatus.PENDING);
+        verifyNoInteractions(getStatusUC, findUC);
     }
-    @Test void shouldReturn200WhenFound() {
+
+    @Test
+    void shouldReturn200WhenOrderFound() {
+        Order order = Order.create("c", BigDecimal.TEN);
+        when(findUC.execute(order.getId())).thenReturn(Optional.of(order));
+
+        var response = controller.getOrder(order.getId());
+
+        assertThat(response.getStatusCode()).isEqualTo(HttpStatus.OK);
+        assertThat(response.getBody()).isNotNull();
+        assertThat(response.getBody().orderId()).isEqualTo(order.getId());
+        assertThat(response.getBody().customerId()).isEqualTo("c");
+        assertThat(response.getBody().amount()).isEqualByComparingTo(BigDecimal.TEN);
+    }
+
+    @Test
+    void shouldReturn404WhenOrderNotFound() {
+        when(findUC.execute("unknown")).thenReturn(Optional.empty());
+        assertThat(controller.getOrder("unknown").getStatusCode()).isEqualTo(HttpStatus.NOT_FOUND);
+    }
+
+    @Test
+    void shouldReturn200StatusWhenFound() {
         when(getStatusUC.execute("id-1")).thenReturn(Optional.of(OrderStatus.PROCESSED));
         assertThat(controller.getStatus("id-1").getStatusCode()).isEqualTo(HttpStatus.OK);
     }
-    @Test void shouldReturn404WhenNotFound() {
+
+    @Test
+    void shouldReturn404StatusWhenNotFound() {
         when(getStatusUC.execute("x")).thenReturn(Optional.empty());
         assertThat(controller.getStatus("x").getStatusCode()).isEqualTo(HttpStatus.NOT_FOUND);
     }
-    @Test void shouldPropagateUseCaseException() {
-        when(createUC.execute(any())).thenThrow(EventPublishingException.class);
-        assertThatThrownBy(() -> controller.createOrder(new OrderRequest("c",BigDecimal.TEN)))
+
+    @Test
+    void shouldPropagateUseCaseException() {
+        when(createUC.execute(anyString(), any(BigDecimal.class)))
+                .thenThrow(EventPublishingException.class);
+        assertThatThrownBy(() -> controller.createOrder(new OrderRequest("c", BigDecimal.TEN)))
                 .isInstanceOf(EventPublishingException.class);
     }
 }
