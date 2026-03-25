@@ -15,11 +15,13 @@ import org.mockito.junit.jupiter.MockitoExtension;
 
 import java.math.BigDecimal;
 import java.util.concurrent.CompletableFuture;
+import java.util.concurrent.TimeUnit;
 
 import static org.assertj.core.api.Assertions.assertThatNullPointerException;
 import static org.assertj.core.api.AssertionsForClassTypes.assertThat;
 import static org.assertj.core.api.AssertionsForClassTypes.assertThatThrownBy;
 import static org.mockito.ArgumentMatchers.any;
+import static org.mockito.ArgumentMatchers.anyLong;
 import static org.mockito.Mockito.*;
 
 @ExtendWith(MockitoExtension.class)
@@ -88,5 +90,21 @@ class CreateOrderUseCaseImplTest {
         assertThatThrownBy(() -> useCase.execute("c", BigDecimal.ZERO))
                 .isInstanceOf(IllegalArgumentException.class);
         verifyNoInteractions(writeRepo, publisher);
+    }
+
+    @Test
+    @DisplayName("deve restaurar interrupt flag e lançar EventPublishingException em InterruptedException")
+    void shouldRestoreInterruptFlagOnInterruptedException() throws Exception {
+        CompletableFuture<Void> future = mock(CompletableFuture.class);
+        when(future.get(anyLong(), any(TimeUnit.class))).thenThrow(new InterruptedException("interrupted"));
+        when(publisher.publish(any(Order.class))).thenReturn(future);
+
+        try {
+            assertThatThrownBy(() -> useCase.execute("c", BigDecimal.TEN))
+                    .isInstanceOf(EventPublishingException.class);
+            assertThat(Thread.currentThread().isInterrupted()).isTrue();
+        } finally {
+            Thread.interrupted(); // restaura o estado para não afetar outros testes
+        }
     }
 }

@@ -1,24 +1,46 @@
 package com.olivertech.orderservice.application.adapter.in.web;
 
 import com.olivertech.orderservice.domain.exception.EventPublishingException;
+import com.olivertech.orderservice.domain.exception.OrderNotFoundException;
 import jakarta.validation.ConstraintViolationException;
 import org.junit.jupiter.api.Test;
+import org.springframework.http.HttpMethod;
+import org.springframework.validation.BindingResult;
+import org.springframework.validation.FieldError;
 import org.springframework.web.HttpRequestMethodNotSupportedException;
+import org.springframework.web.bind.MethodArgumentNotValidException;
+import org.springframework.web.servlet.resource.NoResourceFoundException;
 
 import java.util.List;
 import java.util.Set;
 
 import static org.assertj.core.api.Assertions.assertThat;
+import static org.mockito.Mockito.mock;
+import static org.mockito.Mockito.when;
 
 class GlobalExceptionHandlerTest {
 
     GlobalExceptionHandler handler = new GlobalExceptionHandler();
 
     @Test
-    void shouldReturn400Message() {
+    void shouldReturn400ForConstraintViolation() {
         var result = handler.handleConstraintViolation(
                 new ConstraintViolationException("ID inválido", Set.of()));
         assertThat(result).containsKey("error");
+    }
+
+    @Test
+    void shouldReturn400ForValidationErrors() {
+        MethodArgumentNotValidException ex = mock(MethodArgumentNotValidException.class);
+        BindingResult bindingResult = mock(BindingResult.class);
+        when(ex.getBindingResult()).thenReturn(bindingResult);
+        when(bindingResult.getFieldErrors()).thenReturn(List.of(
+                new FieldError("request", "customerId", "não pode ser vazio")));
+
+        var result = handler.handleValidation(ex);
+
+        assertThat(result).containsKey("errors");
+        assertThat(result.get("errors")).contains("não pode ser vazio");
     }
 
     @Test
@@ -39,6 +61,22 @@ class GlobalExceptionHandlerTest {
                 .containsEntry("allowed", "POST")
                 .containsEntry("docs", "/swagger-ui.html");
         assertThat(result.get("error")).contains("GET");
+    }
+
+    @Test
+    void shouldReturn404WithResourcePathAndDocsLink() {
+        var result = handler.handleNoResourceFound(
+                new NoResourceFoundException(HttpMethod.GET, "/nao-existe"));
+        assertThat(result)
+                .containsKey("error")
+                .containsEntry("docs", "/swagger-ui.html");
+        assertThat(result.get("error")).contains("/nao-existe");
+    }
+
+    @Test
+    void shouldReturn404WithOrderIdInMessage() {
+        var result = handler.handleOrderNotFound(new OrderNotFoundException("abc-123"));
+        assertThat(result.get("error")).contains("abc-123");
     }
 
     @Test

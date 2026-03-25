@@ -28,7 +28,6 @@ class OrderServiceApplicationTests {
         registry.add("spring.datasource.username",     postgres::getUsername);
         registry.add("spring.datasource.password",     postgres::getPassword);
         registry.add("spring.kafka.bootstrap-servers", kafka::getBootstrapServers);
-        // Diretorio exclusivo por execucao — evita conflito de lock com a aplicacao rodando
         registry.add("spring.kafka.streams.state-dir",
                 () -> System.getProperty("java.io.tmpdir")
                         + "/kafka-streams-test-" + ProcessHandle.current().pid());
