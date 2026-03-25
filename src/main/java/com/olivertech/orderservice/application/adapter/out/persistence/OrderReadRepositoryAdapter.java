@@ -7,10 +7,6 @@ import org.springframework.stereotype.Component;
 
 import java.util.Optional;
 
-/**
- * Adaptador de leitura do repositório de pedidos (SRP: apenas leitura).
- * Implementa somente OrderReadRepositoryPort.
- */
 @Component
 public class OrderReadRepositoryAdapter implements OrderReadRepositoryPort {
 
@@ -31,4 +27,3 @@ public class OrderReadRepositoryAdapter implements OrderReadRepositoryPort {
         return jpaRepository.existsByIdAndStatus(id, status.name());
     }
 }
-

@@ -16,8 +16,7 @@ import java.util.concurrent.CompletableFuture;
 @Component
 public class KafkaOrderEventPublisher implements OrderEventPublisherPort {
 
-    private static final Logger log =
-            LoggerFactory.getLogger(KafkaOrderEventPublisher.class);
+    private static final Logger log = LoggerFactory.getLogger(KafkaOrderEventPublisher.class);
 
     private final KafkaTemplate<String, OrderEvent> kafkaTemplate;
     private final String topic;
@@ -26,22 +25,17 @@ public class KafkaOrderEventPublisher implements OrderEventPublisherPort {
             KafkaTemplate<String, OrderEvent> kafkaTemplate,
             @Value("${kafka.topics.orders}") String topic) {
         this.kafkaTemplate = kafkaTemplate;
-        this.topic         = topic;
+        this.topic = topic;
     }
 
-    /**
-     * Recebe a entidade de domínio Order e faz o mapeamento para OrderEvent (DTO Kafka)
-     * dentro do adaptador — o domínio não precisa conhecer o formato de mensagem.
-     */
     @Override
     public CompletableFuture<Void> publish(Order order) {
         OrderEvent event = OrderEvent.from(order);
 
-        ProducerRecord<String, OrderEvent> record =
-                new ProducerRecord<>(topic, order.getId(), event);
+        ProducerRecord<String, OrderEvent> record = new ProducerRecord<>(topic, order.getId(), event);
 
         record.headers()
-                .add("source",    "order-service".getBytes(StandardCharsets.UTF_8))
+                .add("source", "order-service".getBytes(StandardCharsets.UTF_8))
                 .add("eventType", "ORDER_CREATED".getBytes(StandardCharsets.UTF_8));
 
         return kafkaTemplate.send(record)

@@ -18,11 +18,10 @@ import java.util.concurrent.TimeoutException;
 @Service
 public class CreateOrderUseCaseImpl implements CreateOrderUseCase {
 
-    private static final Logger log =
-            LoggerFactory.getLogger(CreateOrderUseCaseImpl.class);
+    private static final Logger log = LoggerFactory.getLogger(CreateOrderUseCaseImpl.class);
 
     private final OrderWriteRepositoryPort writeRepo;
-    private final OrderEventPublisherPort  publisher;
+    private final OrderEventPublisherPort publisher;
 
     public CreateOrderUseCaseImpl(OrderWriteRepositoryPort writeRepo,
                                   OrderEventPublisherPort publisher) {
@@ -37,10 +36,9 @@ public class CreateOrderUseCaseImpl implements CreateOrderUseCase {
         writeRepo.save(order);
 
         try {
-            // O adaptador Kafka faz o mapeamento Order → OrderEvent internamente
             publisher.publish(order).get(10, TimeUnit.SECONDS);
         } catch (InterruptedException ex) {
-            Thread.currentThread().interrupt();  // restore interrupted status
+            Thread.currentThread().interrupt();
             throw new EventPublishingException(
                     "Falha ao publicar evento para orderId=" + order.getId(), ex);
         } catch (ExecutionException | TimeoutException ex) {

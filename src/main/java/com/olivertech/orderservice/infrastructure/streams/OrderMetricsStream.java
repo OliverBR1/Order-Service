@@ -31,11 +31,6 @@ public class OrderMetricsStream {
                 builder.stream(kafkaProperties.topics().orders(),
                         Consumed.with(Serdes.String(), new JsonSerde<>(OrderEvent.class)));
 
-        /*
-         * Agrega contagem de pedidos por status e publica no tópico de métricas.
-         * Usa apenas um store RocksDB regular (orders-by-status-store) — evita
-         * conflito de tags Prometheus entre stores regular e windowed.
-         */
         ordersStream
                 .filter((key, event) -> event != null)
                 .groupBy((key, event) -> event.status().name(),

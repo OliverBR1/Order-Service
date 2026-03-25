@@ -5,10 +5,6 @@ import com.olivertech.orderservice.domain.model.OrderStatus;
 import com.olivertech.orderservice.domain.port.out.OrderWriteRepositoryPort;
 import org.springframework.stereotype.Component;
 
-/**
- * Adaptador de escrita do repositório de pedidos (SRP: apenas escrita).
- * Implementa somente OrderWriteRepositoryPort.
- */
 @Component
 public class OrderWriteRepositoryAdapter implements OrderWriteRepositoryPort {
 
@@ -28,4 +24,3 @@ public class OrderWriteRepositoryAdapter implements OrderWriteRepositoryPort {
         jpaRepository.updateStatus(id, newStatus.name());
     }
 }
-

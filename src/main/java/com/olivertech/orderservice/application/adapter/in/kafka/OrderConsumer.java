@@ -22,8 +22,7 @@ import org.springframework.stereotype.Component;
 @Component
 public class OrderConsumer {
 
-    private static final Logger log =
-            LoggerFactory.getLogger(OrderConsumer.class);
+    private static final Logger log = LoggerFactory.getLogger(OrderConsumer.class);
 
     private final ProcessOrderUseCase processOrderUseCase;
     private final MeterRegistry meterRegistry;
@@ -31,10 +30,9 @@ public class OrderConsumer {
     @Value("${kafka.topics.orders}")
     private String ordersTopic;
 
-    public OrderConsumer(ProcessOrderUseCase processOrderUseCase,
-                         MeterRegistry meterRegistry) {
+    public OrderConsumer(ProcessOrderUseCase processOrderUseCase, MeterRegistry meterRegistry) {
         this.processOrderUseCase = processOrderUseCase;
-        this.meterRegistry       = meterRegistry;
+        this.meterRegistry = meterRegistry;
     }
 
     @RetryableTopic(
@@ -54,27 +52,21 @@ public class OrderConsumer {
             @Header(KafkaHeaders.RECEIVED_PARTITION) int partition,
             @Header(KafkaHeaders.OFFSET) long offset) {
 
-        log.info("Consumindo orderId={} partition={} offset={}",
-                event.orderId(), partition, offset);
+        log.info("Consumindo orderId={} partition={} offset={}", event.orderId(), partition, offset);
 
         Timer.Sample sample = Timer.start(meterRegistry);
         try {
-            // Extrai apenas o orderId — o domínio não precisa conhecer OrderEvent
             processOrderUseCase.execute(event.orderId());
-            sample.stop(meterRegistry.timer("kafka.consumer.processing.time",
-                    "topic", ordersTopic));
-            meterRegistry.counter("kafka.consumer.success",
-                    "topic", ordersTopic).increment();
+            sample.stop(meterRegistry.timer("kafka.consumer.processing.time", "topic", ordersTopic));
+            meterRegistry.counter("kafka.consumer.success", "topic", ordersTopic).increment();
         } catch (Exception ex) {
-            meterRegistry.counter("kafka.consumer.error",
-                    "topic", ordersTopic).increment();
+            meterRegistry.counter("kafka.consumer.error", "topic", ordersTopic).increment();
             throw ex;
         }
     }
 
     @DltHandler
-    public void handleDlt(OrderEvent event,
-                          @Header(KafkaHeaders.RECEIVED_TOPIC) String topic) {
+    public void handleDlt(OrderEvent event, @Header(KafkaHeaders.RECEIVED_TOPIC) String topic) {
         log.error("[DLT] orderId={} esgotou retries. Topic={}", event.orderId(), topic);
         meterRegistry.counter("kafka.consumer.dlt", "topic", topic).increment();
     }

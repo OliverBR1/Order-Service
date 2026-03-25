@@ -6,10 +6,6 @@ import org.springframework.web.bind.annotation.RestController;
 
 import java.io.IOException;
 
-/**
- * Redireciona a raiz da aplicação para o Swagger UI.
- * Evita o erro 404/405 quando o browser acessa http://localhost:8081.
- */
 @RestController
 public class RootController {
 
@@ -18,4 +14,3 @@ public class RootController {
         response.sendRedirect("/swagger-ui.html");
     }
 }
-
