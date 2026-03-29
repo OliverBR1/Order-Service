@@ -7,6 +7,7 @@ import com.olivertech.orderservice.domain.model.OrderStatus;
 import com.olivertech.orderservice.domain.port.in.CreateOrderUseCase;
 import com.olivertech.orderservice.domain.port.in.FindOrderUseCase;
 import com.olivertech.orderservice.domain.port.in.GetOrderStatusUseCase;
+import com.olivertech.orderservice.domain.port.in.ListOrdersUseCase;
 import io.swagger.v3.oas.annotations.Operation;
 import io.swagger.v3.oas.annotations.Parameter;
 import io.swagger.v3.oas.annotations.responses.ApiResponse;
@@ -17,6 +18,8 @@ import org.springframework.http.HttpStatus;
 import org.springframework.http.ResponseEntity;
 import org.springframework.validation.annotation.Validated;
 import org.springframework.web.bind.annotation.*;
+
+import java.util.List;
 
 @RestController
 @RequestMapping("/api/orders")
@@ -30,13 +33,26 @@ public class OrderController {
     private final CreateOrderUseCase    createOrderUseCase;
     private final FindOrderUseCase      findOrderUseCase;
     private final GetOrderStatusUseCase getOrderStatusUseCase;
+    private final ListOrdersUseCase     listOrdersUseCase;
 
     public OrderController(CreateOrderUseCase createOrderUseCase,
                            FindOrderUseCase findOrderUseCase,
-                           GetOrderStatusUseCase getOrderStatusUseCase) {
+                           GetOrderStatusUseCase getOrderStatusUseCase,
+                           ListOrdersUseCase listOrdersUseCase) {
         this.createOrderUseCase    = createOrderUseCase;
         this.findOrderUseCase      = findOrderUseCase;
         this.getOrderStatusUseCase = getOrderStatusUseCase;
+        this.listOrdersUseCase     = listOrdersUseCase;
+    }
+
+    @Operation(summary = "Listar todos os pedidos",
+            description = "Retorna a lista completa de pedidos cadastrados.")
+    @ApiResponse(responseCode = "200", description = "Lista retornada com sucesso")
+    @GetMapping
+    public List<OrderResponse> listOrders() {
+        return listOrdersUseCase.execute().stream()
+                .map(OrderResponse::from)
+                .toList();
     }
 
     @Operation(summary = "Criar pedido",

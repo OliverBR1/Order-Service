@@ -26,13 +26,14 @@ public class OrderConsumer {
 
     private final ProcessOrderUseCase processOrderUseCase;
     private final MeterRegistry meterRegistry;
+    private final String ordersTopic;
 
-    @Value("${kafka.topics.orders}")
-    private String ordersTopic;
-
-    public OrderConsumer(ProcessOrderUseCase processOrderUseCase, MeterRegistry meterRegistry) {
+    public OrderConsumer(ProcessOrderUseCase processOrderUseCase,
+                         MeterRegistry meterRegistry,
+                         @Value("${kafka.topics.orders}") String ordersTopic) {
         this.processOrderUseCase = processOrderUseCase;
         this.meterRegistry = meterRegistry;
+        this.ordersTopic = ordersTopic;
     }
 
     @RetryableTopic(
@@ -59,7 +60,7 @@ public class OrderConsumer {
             processOrderUseCase.execute(event.orderId());
             sample.stop(meterRegistry.timer("kafka.consumer.processing.time", "topic", ordersTopic));
             meterRegistry.counter("kafka.consumer.success", "topic", ordersTopic).increment();
-        } catch (Exception ex) {
+        } catch (RuntimeException ex) {
             meterRegistry.counter("kafka.consumer.error", "topic", ordersTopic).increment();
             throw ex;
         }

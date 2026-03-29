@@ -5,6 +5,7 @@ import com.olivertech.orderservice.domain.model.OrderStatus;
 import com.olivertech.orderservice.domain.port.out.OrderReadRepositoryPort;
 import org.springframework.stereotype.Component;
 
+import java.util.List;
 import java.util.Optional;
 
 @Component
@@ -25,5 +26,12 @@ public class OrderReadRepositoryAdapter implements OrderReadRepositoryPort {
     @Override
     public boolean existsByIdAndStatus(String id, OrderStatus status) {
         return jpaRepository.existsByIdAndStatus(id, status.name());
+    }
+
+    @Override
+    public List<Order> findAll() {
+        return jpaRepository.findAll().stream()
+                .map(OrderEntity::toDomain)
+                .toList();
     }
 }

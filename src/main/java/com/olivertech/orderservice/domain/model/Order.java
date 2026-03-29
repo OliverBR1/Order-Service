@@ -13,15 +13,18 @@ public class Order {
     private final Instant createdAt;
 
     private Order(String id, String customerId, BigDecimal amount, Instant createdAt) {
-        this.id = id; this.customerId = customerId;
-        this.amount = amount; this.status = OrderStatus.PENDING;
-        this.createdAt = createdAt;
+        this.id         = id;
+        this.customerId = customerId;
+        this.amount     = amount;
+        this.status     = OrderStatus.PENDING;
+        this.createdAt  = createdAt;
     }
 
     public static Order create(String customerId, BigDecimal amount) {
         Objects.requireNonNull(customerId, "customerId obrigatório");
-        if (amount == null || amount.compareTo(BigDecimal.ZERO) <= 0)
+        if (amount == null || amount.compareTo(BigDecimal.ZERO) <= 0) {
             throw new IllegalArgumentException("Valor deve ser positivo");
+        }
         return new Order(UUID.randomUUID().toString(), customerId, amount, Instant.now());
     }
 
@@ -34,8 +37,9 @@ public class Order {
     }
 
     public void markAsProcessed() {
-        if (this.status != OrderStatus.PENDING)
+        if (this.status != OrderStatus.PENDING) {
             throw new IllegalStateException("Apenas pedidos PENDING podem ser processados");
+        }
         this.status = OrderStatus.PROCESSED;
     }
 
