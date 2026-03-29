@@ -1,6 +1,6 @@
 # Order Service
 
-Microsserviço de pedidos construído com **Spring Boot 3.5**, **Apache Kafka** e **PostgreSQL**, seguindo a arquitetura hexagonal (Ports & Adapters).
+Microsserviço de pedidos construído com **Spring Boot 4.0.4**, **Apache Kafka** e **PostgreSQL**, seguindo a arquitetura hexagonal (Ports & Adapters).
 
 ---
 
@@ -8,6 +8,7 @@ Microsserviço de pedidos construído com **Spring Boot 3.5**, **Apache Kafka** 
 
 | Funcionalidade | Descrição |
 |---|---|
+| **Listar pedidos** | Retorna todos os pedidos cadastrados |
 | **Criar pedido** | Recebe um pedido via REST, persiste no banco e publica um evento no Kafka |
 | **Buscar pedido** | Retorna os dados completos de um pedido pelo ID |
 | **Consultar status** | Retorna apenas o status atual de um pedido pelo ID |
@@ -29,6 +30,7 @@ src/main/java/com/olivertech/orderservice/
 │   │   ├── CreateOrderUseCase
 │   │   ├── FindOrderUseCase    ← busca pedido completo por ID
 │   │   ├── GetOrderStatusUseCase
+│   │   ├── ListOrdersUseCase   ← lista todos os pedidos
 │   │   └── ProcessOrderUseCase
 │   └── port/out/               # Interfaces de saída (repositório, Kafka)
 │       ├── OrderReadRepositoryPort
@@ -42,6 +44,11 @@ src/main/java/com/olivertech/orderservice/
 └── infrastructure/             # Configurações técnicas
     ├── config/                 # Kafka, OpenAPI, Topics
     └── streams/                # Pipeline Kafka Streams de métricas
+
+src/main/resources/
+├── application.properties      # Configuração de desenvolvimento local
+├── application-prod.properties # Overrides para produção (usa variáveis de ambiente)
+└── schema.sql                  # DDL — cria a tabela orders automaticamente no startup
 ```
 
 ### Fluxo completo de um pedido
@@ -61,6 +68,10 @@ Cliente → POST /api/orders
 Cliente → GET /api/orders/{id}
             ↓
     FindOrderUseCase → retorna dados completos do pedido
+
+Cliente → GET /api/orders
+            ↓
+    ListOrdersUseCase → retorna lista de todos os pedidos
 ```
 
 ---
@@ -90,7 +101,7 @@ docker-compose ps
 # Aguarde todos os STATUS mostrarem "healthy"
 ```
 
-> **Nota:** O arquivo `src/main/resources/application.properties` já contém todos os valores padrão para desenvolvimento local (porta `5433`, usuário `postgres`, Kafka em `localhost:9092`). Nenhuma configuração extra é necessária para rodar localmente.
+> **Nota:** O arquivo `src/main/resources/application.properties` já contém todos os valores padrão para desenvolvimento local — porta `5433`, Kafka em `localhost:9092`, usuário `postgres` e senha `postgres`. Nenhuma configuração extra é necessária para rodar localmente. Para usar credenciais diferentes, defina `PGUSER` e `PGPASSWORD` como variáveis de ambiente do sistema.
 
 ### Passo 2 — Execute a aplicação
 
@@ -100,6 +111,67 @@ docker-compose ps
 ```
 
 A aplicação iniciará na porta **8081**.
+
+---
+
+## 🐳 Deploy com Docker
+
+### Build da imagem
+
+```powershell
+# 1. Gera o JAR
+.\mvnw.cmd clean package -DskipTests
+
+# 2. Constrói a imagem Docker (usa o Dockerfile na raiz)
+docker build -t order-service:latest .
+```
+
+### Executar o container
+
+> **Pré-requisito:** o `docker-compose up -d` já deve estar rodando (PostgreSQL + Kafka).
+
+```powershell
+docker run -d `
+  --name order-service `
+  --network order-service_default `
+  -p 8081:8081 `
+  -e SPRING_PROFILES_ACTIVE=prod `
+  -e DB_URL=jdbc:postgresql://postgres:5432/orderdb `
+  -e PGUSER=postgres `
+  -e PGPASSWORD=postgres `
+  -e KAFKA_BOOTSTRAP_SERVERS=kafka:29092 `
+  order-service:latest
+```
+
+> **Por que `kafka:29092` e não `kafka:9092`?**  
+> O Kafka tem dois listeners:
+> - `PLAINTEXT_HOST://localhost:9092` — para conexões **do host** (Spring Boot local). O Kafka anuncia `localhost:9092` nos metadados. Dentro de um container, `localhost:9092` resolve para o próprio container, **não para o Kafka** → `Connection refused`.
+> - `PLAINTEXT://kafka:29092` — para conexões **entre containers**. Anuncia `kafka:29092`, que resolve corretamente via DNS do Docker.
+>
+> **Por que `--network order-service_default`?**  
+> O Docker Compose cria uma rede isolada para os serviços. Sem ela, o container da app não enxerga os hostnames `kafka` e `postgres`. O nome padrão da rede é `{pasta}_default`.
+
+### Deploy completo com docker-compose (infra + app)
+
+Adicione o serviço `app` ao `docker-compose.yml`:
+
+```yaml
+app:
+  image: order-service:latest
+  depends_on:
+    postgres:
+      condition: service_healthy
+    kafka:
+      condition: service_healthy
+  ports:
+    - "8081:8081"
+  environment:
+    SPRING_PROFILES_ACTIVE: prod
+    DB_URL: jdbc:postgresql://postgres:5432/orderdb
+    PGUSER: ${PGUSER:-postgres}
+    PGPASSWORD: ${PGPASSWORD:-postgres}
+    KAFKA_BOOTSTRAP_SERVERS: kafka:29092
+```
 
 ---
 
@@ -116,6 +188,27 @@ A aplicação iniciará na porta **8081**.
 ---
 
 ## 📡 Endpoints da API
+
+### Listar todos os pedidos
+
+```http
+GET http://localhost:8081/api/orders
+```
+
+**Resposta (200 OK):**
+```json
+[
+  {
+    "orderId": "550e8400-e29b-41d4-a716-446655440000",
+    "customerId": "cliente-123",
+    "amount": 299.90,
+    "status": "PROCESSED",
+    "createdAt": "2026-03-25T13:00:00Z"
+  }
+]
+```
+
+---
 
 ### Criar um pedido
 
@@ -193,41 +286,46 @@ GET http://localhost:8081/api/orders/{id}/status
 
 ### Inventário de testes
 
-| Classe de Teste | Tipo | O que valida |
+| Classe de Teste | Tipo | Cenários cobertos |
 |---|---|---|
-| `OrderTest` | Unitário | Regras de domínio (criação, transições de status) |
-| `CreateOrderUseCaseImplTest` | Unitário | Criação, publicação Kafka, InterruptedException, validações |
-| `ProcessOrderUseCaseImplTest` | Unitário | Processamento, idempotência, pedido não encontrado |
-| `FindOrderUseCaseImplTest` | Unitário | Busca por ID (encontrado e não encontrado) |
-| `GetOrderStatusUseCaseImplTest` | Unitário | Consulta de status (encontrado e não encontrado) |
-| `OrderControllerTest` | Unitário | Endpoints REST (POST, GET por ID, GET status) |
-| `GlobalExceptionHandlerTest` | Unitário | Todos os handlers de exceção → HTTP |
-| `KafkaOrderEventPublisherTest` | Unitário | Publicação Kafka com headers e chave corretos |
-| `OrderConsumerTest` | Unitário | Consumo, métricas, erros e DLT handler |
-| `OrderEntityTest` | Unitário | Mapeamento domínio ↔ entidade JPA |
-| `OrderReadRepositoryAdapterTest` | Unitário | findById e existsByIdAndStatus com JPA mockado |
-| `OrderWriteRepositoryAdapterTest` | Unitário | save e updateStatus com JPA mockado |
-| `RootControllerTest` | Unitário | Redirect para Swagger UI |
-| `OrderServiceApplicationTests` | Integração | Context load com PostgreSQL + Kafka reais |
+| `OrderTest` | Unitário | Criação com status PENDING, IDs únicos, rejeição de customerId nulo, amount zero e negativo, transição para PROCESSED, rejeição de duplo processamento |
+| `CreateOrderUseCaseImplTest` | Unitário | Ordem de save → publish, status PENDING retornado, mesmo ID salvo e publicado, wrapping de InterruptedException, falha de publicação, null customerId |
+| `ProcessOrderUseCaseImplTest` | Unitário | Processamento e atualização de status, idempotência (evento duplicado ignorado), OrderNotFoundException para ID desconhecido |
+| `FindOrderUseCaseImplTest` | Unitário | Pedido encontrado por ID, Optional vazio quando não encontrado |
+| `GetOrderStatusUseCaseImplTest` | Unitário | Status PENDING, status PROCESSED, Optional vazio quando não encontrado |
+| `ListOrdersUseCaseImplTest` | Unitário | Lista com 2 pedidos retornada corretamente, lista vazia quando sem pedidos |
+| `OrderControllerTest` | Unitário | POST delega ao use case e retorna PENDING, GET `/{id}` 200 com body completo, GET `/{id}` 404, GET `/{id}/status` 200, GET `/{id}/status` 404, GET `/` lista com 2 pedidos, GET `/` lista vazia, propagação de EventPublishingException |
+| `GlobalExceptionHandlerTest` | Unitário | 400 ConstraintViolationException, 400 MethodArgumentNotValidException com lista de erros, 503 EventPublishingException sem expor "Kafka", 405 com método e link docs, 404 NoResourceFoundException com path e link docs, 404 OrderNotFoundException com ID na mensagem, 500 genérico sem stack trace |
+| `KafkaOrderEventPublisherTest` | Unitário | orderId como chave do ProducerRecord, headers `source` e `eventType` em UTF-8, CompletableFuture falho em erro do broker |
+| `OrderConsumerTest` | Unitário | Processamento com incremento de `success`, exceção relançada com incremento de `error`, `success` nunca incrementado em falha, contador `dlt` incrementado no DLT handler |
+| `OrderEntityTest` | Unitário | Mapeamento completo domínio → entidade → domínio (round-trip), preservação do status PROCESSED, reconstituição de pedido PENDING |
+| `OrderReadRepositoryAdapterTest` | Unitário | `findById` com order mapeado, `findById` retorna vazio, `existsByIdAndStatus` true e false, `findAll` com 2 pedidos, `findAll` vazio |
+| `OrderWriteRepositoryAdapterTest` | Unitário | `save` delega ao JPA, `updateStatus` com PROCESSED e com FAILED |
+| `RootControllerTest` | Unitário | Redirect para `/swagger-ui.html` |
+| `OrderServiceApplicationTests` | Integração | Context load com PostgreSQL e Kafka reais via Testcontainers (`ConfluentKafkaContainer` — KRaft) |
 
 ### Cobertura de testes
 
-Cobertura medida com JaCoCo. Resultado geral: **92% de classes** e **98% de linhas** cobertas no projeto.
+| Pacote / Classe | Classes | Linhas | Observação |
+|---|---|---|---|
+| **`application`** | **100%** | **~99%** | |
+| `adapter.in.kafka` — `OrderConsumer` | 100% | 100% | |
+| `adapter.in.web` — `OrderController` | 100% | 100% | Todos os endpoints incluindo `listOrders()` |
+| `adapter.in.web` — `GlobalExceptionHandler` | 100% | 100% | 7 handlers testados individualmente |
+| `adapter.in.web` — `RootController` | 100% | 100% | |
+| `adapter.out.kafka` — `KafkaOrderEventPublisher` | 100% | 100% | |
+| `adapter.out.persistence` — `OrderReadRepositoryAdapter` | 100% | 100% | Inclui `findAll()` |
+| `adapter.out.persistence` — `OrderWriteRepositoryAdapter` | 100% | 100% | |
+| `adapter.out.persistence` — `OrderEntity` | 100% | 100% | |
+| `usecase` — `CreateOrderUseCaseImpl` | 100% | 100% | |
+| `usecase` — `FindOrderUseCaseImpl` | 100% | 100% | |
+| `usecase` — `GetOrderStatusUseCaseImpl` | 100% | 100% | |
+| `usecase` — `ListOrdersUseCaseImpl` | 100% | 100% | |
+| `usecase` — `ProcessOrderUseCaseImpl` | 100% | 100% | |
+| **`domain`** | **100%** | **100%** | |
+| **`infrastructure`** | **~85%** | **~96%** | `KafkaStreamsConfig`, `OpenApiConfig` não testadas |
+| `OrderServiceApplication` | 0% | 0% | Coberto apenas no teste de integração |
 
-| Pacote / Classe | Classes | Linhas |
-|---|---|---|
-| **`application`** | **100%** | **100%** |
-| `adapter.in.kafka` | 100% | 100% |
-| `OrderConsumer` | 100% métodos | 100% linhas |
-| `adapter.in.web` | 100% | 100% |
-| `adapter.out` | 100% | 100% |
-| `dto` | 100% | 100% |
-| `usecase` | 100% | 100% |
-| **`domain`** | **100%** | **100%** |
-| **`infrastructure`** | **85%** | **96%** |
-| `OrderServiceApplication` | 0% métodos | 0% linhas |
-
-> `OrderServiceApplication` fica em 0% pois o método `main` não é exercitado pelos testes unitários — é coberto apenas no teste de integração com Testcontainers (`OrderServiceApplicationTests`).
 
 ---
 
@@ -261,18 +359,20 @@ docker-compose down -v
 
 As configurações ficam em `src/main/resources/application.properties`.
 
-| Propriedade | Padrão | Descrição |
+| Propriedade | Padrão (dev) | Descrição |
 |---|---|---|
 | `server.port` | `8081` | Porta da aplicação |
+| `spring.datasource.url` | `jdbc:postgresql://localhost:5433/orderdb` | URL do banco de dados |
+| `spring.datasource.username` | `postgres` | Usuário do banco — sobrescreva com `$PGUSER` |
+| `spring.datasource.password` | `postgres` | Senha do banco — sobrescreva com `$PGPASSWORD` |
 | `spring.kafka.bootstrap-servers` | `localhost:9092` | Endereço do Kafka |
-| `spring.datasource.url` | `jdbc:postgresql://localhost:5433/orderdb` | Banco de dados |
 | `kafka.topics.orders` | `orders-topic` | Tópico principal de pedidos |
 | `kafka.partitions` | `3` | Número de partições dos tópicos |
 | `kafka.replicas` | `1` | Fator de replicação (1 para dev local) |
 
 Para produção, use o perfil `prod` com variáveis de ambiente (veja `application-prod.properties`):
 ```bash
-KAFKA_BOOTSTRAP_SERVERS=kafka:9092
+KAFKA_BOOTSTRAP_SERVERS=kafka:29092   # listener interno Docker (PLAINTEXT)
 DB_URL=jdbc:postgresql://postgres:5432/orderdb
 PGUSER=usuario
 PGPASSWORD=senha_segura
@@ -330,6 +430,23 @@ Resposta esperada:
 
 ---
 
+## 🔍 Qualidade de Código (SonarQube)
+
+O projeto foi revisado contra as regras do SonarQube. Todas as violações encontradas foram corrigidas:
+
+| Regra | Severidade | Arquivo | Correção aplicada |
+|---|---|---|---|
+| **java:S2057** — Serializable sem `serialVersionUID` | Major | `OrderNotFoundException` | Adicionado `private static final long serialVersionUID = 1L` |
+| **java:S2057** — Serializable sem `serialVersionUID` | Major | `EventPublishingException` | Adicionado `private static final long serialVersionUID = 1L` |
+| **java:S121** — `if` sem chaves `{}` | Major | `Order` | Adicionadas chaves em `create()` e `markAsProcessed()` |
+| **java:S1213** — Múltiplos statements por linha | Minor | `Order` | Cada atribuição do construtor em linha própria |
+| **java:S2221** — `catch (Exception)` desnecessário | Major | `OrderConsumer` | Trocado por `catch (RuntimeException)` |
+| **java:S6830** — Injeção via campo (`@Value`) | Major | `OrderConsumer` | `ordersTopic` movido para injeção por construtor, campo agora `final` |
+
+> **Security Hotspot — java:S5146** (`RootController.redirectToSwagger`): o SonarQube marca redirects como hotspot de revisão. Como a URL `/swagger-ui.html` é **hardcoded** e não controlada pelo usuário, não há risco de open redirect. Marcar como "revisado" no painel do SonarQube.
+
+---
+
 ## 🛠️ Troubleshooting
 
 ### Aplicação não inicia — erro de banco de dados
@@ -363,3 +480,25 @@ Stop-Process -Id <PID>
 ```powershell
 .\mvnw.cmd clean package
 ```
+
+### App container não conecta ao KafkaSintoma: `Connection refused` ou `LEADER_NOT_AVAILABLE` mesmo com Kafka saudável.
+
+Causa: o container da app está usando `kafka:9092` (listener `PLAINTEXT_HOST` que anuncia `localhost:9092`). Dentro do container, `localhost` aponta para o próprio container, não para o Kafka.
+
+```
+PLAINTEXT_HOST://localhost:9092  ← apenas para Spring Boot rodando no HOST
+PLAINTEXT://kafka:29092          ← para containers na mesma rede Docker
+```
+
+Solução: garantir `KAFKA_BOOTSTRAP_SERVERS=kafka:29092` e `--network order-service_default` no `docker run`.
+
+### Schema não foi criado no banco
+
+O `schema.sql` é executado automaticamente no startup via `spring.sql.init.mode=always`. Se a tabela `orders` não existir, o log mostrará:
+
+```
+Executing SQL script from class path resource [schema.sql]
+```
+
+Se isso não aparecer, verifique se `spring.jpa.defer-datasource-initialization=true` está ativo e se a conexão com o banco está saudável (`/actuator/health`).
+
