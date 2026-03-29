@@ -9,11 +9,9 @@ import io.micrometer.core.instrument.Timer;
 import org.junit.jupiter.api.BeforeEach;
 import org.junit.jupiter.api.Test;
 import org.junit.jupiter.api.extension.ExtendWith;
-import org.mockito.InjectMocks;
 import org.mockito.Mock;
 import org.mockito.MockedStatic;
 import org.mockito.junit.jupiter.MockitoExtension;
-import org.springframework.test.util.ReflectionTestUtils;
 
 import java.math.BigDecimal;
 import java.time.Instant;
@@ -29,15 +27,15 @@ class OrderConsumerTest {
     @Mock MeterRegistry registry;
     @Mock Counter successCounter;
     @Mock Counter errorCounter;
-    @Mock Timer processingTimer;           // <-- novo: para o sample.stop(...)
-    @InjectMocks OrderConsumer consumer;
+    @Mock Timer processingTimer;
+
+    OrderConsumer consumer;
 
     OrderEvent event;
 
     @BeforeEach
     void setup() {
-        // injeta o @Value manualmente
-        ReflectionTestUtils.setField(consumer, "ordersTopic", "orders");
+        consumer = new OrderConsumer(processUC, registry, "orders");
 
         event = new OrderEvent("o1", "c1", BigDecimal.TEN, OrderStatus.PENDING, Instant.now());
 

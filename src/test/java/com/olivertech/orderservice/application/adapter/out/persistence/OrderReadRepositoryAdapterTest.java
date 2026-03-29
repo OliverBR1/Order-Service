@@ -9,9 +9,10 @@ import org.mockito.Mock;
 import org.mockito.junit.jupiter.MockitoExtension;
 
 import java.math.BigDecimal;
+import java.util.List;
 import java.util.Optional;
 
-import static org.assertj.core.api.AssertionsForClassTypes.assertThat;
+import static org.assertj.core.api.Assertions.assertThat;
 import static org.mockito.Mockito.when;
 
 @ExtendWith(MockitoExtension.class)
@@ -60,6 +61,26 @@ class OrderReadRepositoryAdapterTest {
         when(jpaRepo.existsByIdAndStatus("id-1", "PROCESSED")).thenReturn(false);
 
         assertThat(adapter.existsByIdAndStatus("id-1", OrderStatus.PROCESSED)).isFalse();
+    }
+
+    @Test
+    void findAll_shouldReturnMappedDomainOrders() {
+        Order o1 = Order.create("cust-1", new BigDecimal("10.00"));
+        Order o2 = Order.create("cust-2", new BigDecimal("20.00"));
+        when(jpaRepo.findAll()).thenReturn(List.of(OrderEntity.from(o1), OrderEntity.from(o2)));
+
+        List<Order> result = adapter.findAll();
+
+        assertThat(result).hasSize(2);
+        assertThat(result).extracting(Order::getCustomerId)
+                .containsExactlyInAnyOrder("cust-1", "cust-2");
+    }
+
+    @Test
+    void findAll_shouldReturnEmptyListWhenNoOrders() {
+        when(jpaRepo.findAll()).thenReturn(List.of());
+
+        assertThat(adapter.findAll()).isEmpty();
     }
 }
 

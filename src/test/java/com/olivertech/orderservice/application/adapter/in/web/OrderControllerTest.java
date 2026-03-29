@@ -8,6 +8,7 @@ import com.olivertech.orderservice.domain.model.OrderStatus;
 import com.olivertech.orderservice.domain.port.in.CreateOrderUseCase;
 import com.olivertech.orderservice.domain.port.in.FindOrderUseCase;
 import com.olivertech.orderservice.domain.port.in.GetOrderStatusUseCase;
+import com.olivertech.orderservice.domain.port.in.ListOrdersUseCase;
 import org.junit.jupiter.api.Test;
 import org.junit.jupiter.api.extension.ExtendWith;
 import org.mockito.InjectMocks;
@@ -16,10 +17,11 @@ import org.mockito.junit.jupiter.MockitoExtension;
 import org.springframework.http.HttpStatus;
 
 import java.math.BigDecimal;
+import java.util.List;
 import java.util.Optional;
 
-import static org.assertj.core.api.AssertionsForClassTypes.assertThat;
-import static org.assertj.core.api.AssertionsForClassTypes.assertThatThrownBy;
+import static org.assertj.core.api.Assertions.assertThat;
+import static org.assertj.core.api.Assertions.assertThatThrownBy;
 import static org.mockito.ArgumentMatchers.any;
 import static org.mockito.ArgumentMatchers.anyString;
 import static org.mockito.Mockito.verifyNoInteractions;
@@ -31,6 +33,7 @@ class OrderControllerTest {
     @Mock CreateOrderUseCase    createUC;
     @Mock FindOrderUseCase      findUC;
     @Mock GetOrderStatusUseCase getStatusUC;
+    @Mock ListOrdersUseCase     listOrdersUC;
     @InjectMocks OrderController controller;
 
     @Test
@@ -75,6 +78,29 @@ class OrderControllerTest {
     void shouldReturn404StatusWhenNotFound() {
         when(getStatusUC.execute("x")).thenReturn(Optional.empty());
         assertThat(controller.getStatus("x").getStatusCode()).isEqualTo(HttpStatus.NOT_FOUND);
+    }
+
+    @Test
+    void shouldReturnAllOrdersAsList() {
+        Order o1 = Order.create("c1", BigDecimal.TEN);
+        Order o2 = Order.create("c2", new BigDecimal("50.00"));
+        when(listOrdersUC.execute()).thenReturn(List.of(o1, o2));
+
+        List<OrderResponse> result = controller.listOrders();
+
+        assertThat(result).hasSize(2);
+        assertThat(result.get(0).customerId()).isEqualTo("c1");
+        assertThat(result.get(1).customerId()).isEqualTo("c2");
+    }
+
+    @Test
+    void shouldReturnEmptyListWhenNoOrders() {
+        when(listOrdersUC.execute()).thenReturn(List.of());
+
+        List<OrderResponse> result = controller.listOrders();
+
+        assertThat(result).isEmpty();
+        verifyNoInteractions(createUC, findUC, getStatusUC);
     }
 
     @Test
