@@ -9,7 +9,7 @@ import org.slf4j.Logger;
 import org.slf4j.LoggerFactory;
 import org.springframework.context.annotation.Bean;
 import org.springframework.context.annotation.Configuration;
-import org.springframework.kafka.support.serializer.JsonSerde;
+import org.springframework.kafka.support.serializer.JacksonJsonSerde;
 
 import java.time.Instant;
 
@@ -29,17 +29,17 @@ public class OrderMetricsStream {
     public KStream<String, OrderEvent> ordersStream(StreamsBuilder builder) {
         KStream<String, OrderEvent> ordersStream =
                 builder.stream(kafkaProperties.topics().orders(),
-                        Consumed.with(Serdes.String(), new JsonSerde<>(OrderEvent.class)));
+                        Consumed.with(Serdes.String(), new JacksonJsonSerde<>(OrderEvent.class)));
 
         ordersStream
                 .filter((key, event) -> event != null)
                 .groupBy((key, event) -> event.status().name(),
-                        Grouped.with(Serdes.String(), new JsonSerde<>(OrderEvent.class)))
+                        Grouped.with(Serdes.String(), new JacksonJsonSerde<>(OrderEvent.class)))
                 .count(Materialized.as("orders-by-status-store"))
                 .toStream()
                 .mapValues((status, count) -> new OrderMetric(status, count, Instant.now()))
                 .to(kafkaProperties.topics().orderMetrics(),
-                        Produced.with(Serdes.String(), new JsonSerde<>(OrderMetric.class)));
+                        Produced.with(Serdes.String(), new JacksonJsonSerde<>(OrderMetric.class)));
 
         log.info("Kafka Streams pipeline iniciado");
         return ordersStream;

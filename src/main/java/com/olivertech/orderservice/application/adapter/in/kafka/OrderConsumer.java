@@ -16,7 +16,8 @@ import org.springframework.kafka.support.KafkaHeaders;
 import org.springframework.kafka.support.serializer.DeserializationException;
 import org.springframework.messaging.handler.annotation.Header;
 import org.springframework.messaging.handler.annotation.Payload;
-import org.springframework.retry.annotation.Backoff;
+import org.springframework.kafka.annotation.BackOff;
+
 import org.springframework.stereotype.Component;
 
 @Component
@@ -38,7 +39,7 @@ public class OrderConsumer {
 
     @RetryableTopic(
             attempts = "4",
-            backoff = @Backoff(delay = 2000, multiplier = 2.0, maxDelay = 30000),
+            backOff = @BackOff(delay = 2000, multiplier = 2.0, maxDelay = 30000),
             autoCreateTopics = "false",
             topicSuffixingStrategy = TopicSuffixingStrategy.SUFFIX_WITH_INDEX_VALUE,
             exclude = { DeserializationException.class, JsonParseException.class },
