@@ -1,5 +1,3 @@
--- Criação da tabela de pedidos (executa automaticamente no startup)
--- IF NOT EXISTS garante idempotência: pode rodar múltiplas vezes sem erro
 CREATE TABLE IF NOT EXISTS orders (
     id          VARCHAR(36)    NOT NULL PRIMARY KEY,
     customer_id VARCHAR(255)   NOT NULL,
