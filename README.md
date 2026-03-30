@@ -1,6 +1,6 @@
 # Order Service
 
-Microsserviço de pedidos construído com **Spring Boot 4.0.4**, **Apache Kafka** e **PostgreSQL**, seguindo a arquitetura hexagonal (Ports & Adapters).
+Microsserviço de pedido construído com **Spring Boot 4.0.4**, **Apache Kafka** e **PostgreSQL**, seguindo a arquitetura hexagonal (Ports & Adapters).
 
 ---
 
