@@ -10,5 +10,6 @@ public interface OrderReadRepositoryPort {
     Optional<Order> findById(String id);
     boolean existsByIdAndStatus(String id, OrderStatus status);
     List<Order> findAll();
+    List<Order> findAll(int page, int size);
 }
 

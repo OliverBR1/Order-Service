@@ -13,6 +13,8 @@ import io.swagger.v3.oas.annotations.Parameter;
 import io.swagger.v3.oas.annotations.responses.ApiResponse;
 import io.swagger.v3.oas.annotations.tags.Tag;
 import jakarta.validation.Valid;
+import jakarta.validation.constraints.Max;
+import jakarta.validation.constraints.Min;
 import jakarta.validation.constraints.Pattern;
 import org.springframework.http.HttpStatus;
 import org.springframework.http.ResponseEntity;
@@ -30,6 +32,9 @@ public class OrderController {
     private static final String UUID_V4_REGEXP =
             "^[0-9a-fA-F]{8}-[0-9a-fA-F]{4}-4[0-9a-fA-F]{3}-[89abAB][0-9a-fA-F]{3}-[0-9a-fA-F]{12}$";
 
+    private static final int DEFAULT_PAGE_SIZE = 20;
+    private static final int MAX_PAGE_SIZE     = 100;
+
     private final CreateOrderUseCase    createOrderUseCase;
     private final FindOrderUseCase      findOrderUseCase;
     private final GetOrderStatusUseCase getOrderStatusUseCase;
@@ -45,12 +50,17 @@ public class OrderController {
         this.listOrdersUseCase     = listOrdersUseCase;
     }
 
-    @Operation(summary = "Listar todos os pedidos",
-            description = "Retorna a lista completa de pedidos cadastrados.")
+    @Operation(summary = "Listar pedidos",
+            description = "Retorna pedidos paginados. Máximo de 100 por página.")
     @ApiResponse(responseCode = "200", description = "Lista retornada com sucesso")
     @GetMapping
-    public List<OrderResponse> listOrders() {
-        return listOrdersUseCase.execute().stream()
+    public List<OrderResponse> listOrders(
+            @Parameter(description = "Número da página (0-indexed)")
+            @RequestParam(defaultValue = "0") @Min(0) int page,
+            @Parameter(description = "Itens por página (máx. 100)")
+            @RequestParam(defaultValue = "" + DEFAULT_PAGE_SIZE)
+            @Min(1) @Max(MAX_PAGE_SIZE) int size) {
+        return listOrdersUseCase.execute(page, size).stream()
                 .map(OrderResponse::from)
                 .toList();
     }

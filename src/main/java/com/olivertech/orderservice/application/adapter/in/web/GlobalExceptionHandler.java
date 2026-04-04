@@ -52,8 +52,9 @@ public class GlobalExceptionHandler {
     @ExceptionHandler(NoResourceFoundException.class)
     @ResponseStatus(HttpStatus.NOT_FOUND)
     public Map<String, String> handleNoResourceFound(NoResourceFoundException ex) {
+        // Não expõe o path interno para evitar information disclosure
         return Map.of(
-                "error", "Endpoint não encontrado: " + ex.getResourcePath(),
+                "error", "Endpoint não encontrado",
                 "docs",  "/swagger-ui.html"
         );
     }

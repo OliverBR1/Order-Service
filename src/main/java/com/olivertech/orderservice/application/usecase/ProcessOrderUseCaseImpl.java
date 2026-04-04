@@ -9,6 +9,7 @@ import com.olivertech.orderservice.domain.port.out.OrderWriteRepositoryPort;
 import org.slf4j.Logger;
 import org.slf4j.LoggerFactory;
 import org.springframework.stereotype.Service;
+import org.springframework.transaction.annotation.Isolation;
 import org.springframework.transaction.annotation.Transactional;
 
 @Service
@@ -27,7 +28,7 @@ public class ProcessOrderUseCaseImpl implements ProcessOrderUseCase {
     }
 
     @Override
-    @Transactional
+    @Transactional(isolation = Isolation.SERIALIZABLE)
     public void execute(String orderId) {
         if (readRepo.existsByIdAndStatus(orderId, OrderStatus.PROCESSED)) {
             log.warn("Evento duplicado ignorado: orderId={}", orderId);

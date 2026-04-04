@@ -6,5 +6,6 @@ import java.util.List;
 
 public interface ListOrdersUseCase {
     List<Order> execute();
+    List<Order> execute(int page, int size);
 }
 

@@ -20,5 +20,10 @@ public class ListOrdersUseCaseImpl implements ListOrdersUseCase {
     public List<Order> execute() {
         return readRepo.findAll();
     }
+
+    @Override
+    public List<Order> execute(int page, int size) {
+        return readRepo.findAll(page, size);
+    }
 }
 
