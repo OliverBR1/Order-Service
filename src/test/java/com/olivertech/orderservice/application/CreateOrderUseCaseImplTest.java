@@ -59,7 +59,6 @@ class CreateOrderUseCaseImplTest {
         useCase.execute("c", BigDecimal.TEN);
         verify(writeRepo).save(orderCaptor.capture());
         verify(publisher).publish(orderCaptor.capture());
-        // ambos os captures devem ter o mesmo id
         assertThat(orderCaptor.getAllValues().get(0).getId())
                 .isEqualTo(orderCaptor.getAllValues().get(1).getId());
     }
@@ -104,7 +103,7 @@ class CreateOrderUseCaseImplTest {
                     .isInstanceOf(EventPublishingException.class);
             assertThat(Thread.currentThread().isInterrupted()).isTrue();
         } finally {
-            Thread.interrupted(); // restaura o estado para não afetar outros testes
+            Thread.interrupted();
         }
     }
 }

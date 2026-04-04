@@ -84,9 +84,9 @@ class OrderControllerTest {
     void shouldReturnAllOrdersAsList() {
         Order o1 = Order.create("c1", BigDecimal.TEN);
         Order o2 = Order.create("c2", new BigDecimal("50.00"));
-        when(listOrdersUC.execute()).thenReturn(List.of(o1, o2));
+        when(listOrdersUC.execute(0, 20)).thenReturn(List.of(o1, o2));
 
-        List<OrderResponse> result = controller.listOrders();
+        List<OrderResponse> result = controller.listOrders(0, 20);
 
         assertThat(result).hasSize(2);
         assertThat(result.get(0).customerId()).isEqualTo("c1");
@@ -95,9 +95,9 @@ class OrderControllerTest {
 
     @Test
     void shouldReturnEmptyListWhenNoOrders() {
-        when(listOrdersUC.execute()).thenReturn(List.of());
+        when(listOrdersUC.execute(0, 20)).thenReturn(List.of());
 
-        List<OrderResponse> result = controller.listOrders();
+        List<OrderResponse> result = controller.listOrders(0, 20);
 
         assertThat(result).isEmpty();
         verifyNoInteractions(createUC, findUC, getStatusUC);

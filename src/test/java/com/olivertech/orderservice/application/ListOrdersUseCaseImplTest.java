@@ -42,5 +42,25 @@ class ListOrdersUseCaseImplTest {
 
         assertThat(result).isEmpty();
     }
+
+    @Test
+    void shouldReturnPagedOrders() {
+        Order o1 = Order.create("cust-1", new BigDecimal("10.00"));
+        Order o2 = Order.create("cust-2", new BigDecimal("20.00"));
+        when(readRepo.findAll(0, 10)).thenReturn(List.of(o1, o2));
+
+        List<Order> result = useCase.execute(0, 10);
+
+        assertThat(result).hasSize(2);
+        assertThat(result).extracting(Order::getCustomerId)
+                .containsExactly("cust-1", "cust-2");
+    }
+
+    @Test
+    void shouldReturnEmptyPagedListWhenNoOrders() {
+        when(readRepo.findAll(1, 5)).thenReturn(List.of());
+
+        assertThat(useCase.execute(1, 5)).isEmpty();
+    }
 }
 

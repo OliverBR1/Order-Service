@@ -64,13 +64,15 @@ class GlobalExceptionHandlerTest {
     }
 
     @Test
-    void shouldReturn404WithResourcePathAndDocsLink() {
+    void shouldReturn404WithoutExposingResourcePath() {
         var result = handler.handleNoResourceFound(
-                new NoResourceFoundException(HttpMethod.GET, "/nao-existe"));
+                new NoResourceFoundException(HttpMethod.GET, "/nao-existe" , "/nao-existe"));
         assertThat(result)
                 .containsKey("error")
                 .containsEntry("docs", "/swagger-ui.html");
-        assertThat(result.get("error")).contains("/nao-existe");
+        assertThat(result.get("error"))
+                .doesNotContain("/nao-existe")
+                .contains("não encontrado");
     }
 
     @Test
