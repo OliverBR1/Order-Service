@@ -36,7 +36,11 @@ services:
       # Necessário para EXACTLY_ONCE_V2 com broker único
       KAFKA_TRANSACTION_STATE_LOG_REPLICATION_FACTOR: 1
       KAFKA_TRANSACTION_STATE_LOG_MIN_ISR: 1
+      # Diretório de logs persistente (evita re-formatação a cada reinício)
+      KAFKA_LOG_DIRS: /var/lib/kafka/data
       CLUSTER_ID: "MkU3OEVBNTcwNTJENDM2Qk"
+    volumes:
+      - kafka_data:/var/lib/kafka/data
     healthcheck:
       test: ["CMD-SHELL", "kafka-broker-api-versions --bootstrap-server localhost:9092 > /dev/null 2>&1"]
       interval: 15s
@@ -58,3 +62,4 @@ services:
 
 volumes:
   postgres_data:
+  kafka_data:
