@@ -42,7 +42,7 @@ src/main/java/com/olivertech/orderservice/
 │   ├── adapter/out/            # Kafka Producer e JPA Repository
 │   └── dto/                    # OrderRequest, OrderResponse, OrderEvent
 └── infrastructure/             # Configurações técnicas
-    ├── config/                 # Kafka, OpenAPI, Topics
+    ├── config/                 # Kafka, OpenAPI, Topics, SecurityHeaders
     └── streams/                # Pipeline Kafka Streams de métricas
 
 src/main/resources/
@@ -71,7 +71,7 @@ Cliente → GET /api/orders/{id}
 
 Cliente → GET /api/orders
             ↓
-    ListOrdersUseCase → retorna lista de todos os pedidos
+    ListOrdersUseCase → retorna lista paginada de pedidos
 ```
 
 ---
@@ -181,9 +181,11 @@ app:
 |---|---|---|
 | **API REST** | http://localhost:8081/api/orders | Endpoints de pedidos |
 | **Swagger UI** | http://localhost:8081/swagger-ui.html | Documentação interativa da API |
-| **Actuator Health** | http://localhost:8081/actuator/health | Status da aplicação |
-| **Métricas Prometheus** | http://localhost:8081/actuator/prometheus | Métricas para monitoramento |
+| **Actuator Health** | http://localhost:9090/actuator/health | Status da aplicação |
+| **Métricas Prometheus** | http://localhost:9090/actuator/prometheus | Métricas para monitoramento |
 | **Kafka UI** | http://localhost:8090 | Painel visual dos tópicos Kafka |
+
+> **Nota:** O Actuator roda na porta **9090** (separada da API), acessível apenas em `127.0.0.1`. Isso evita expor endpoints de gestão na mesma porta pública da API.
 
 ---
 
@@ -194,6 +196,13 @@ app:
 ```http
 GET http://localhost:8081/api/orders
 ```
+
+**Parâmetros de query opcionais:**
+
+| Parâmetro | Tipo | Padrão | Descrição |
+|---|---|---|---|
+| `page` | int | `0` | Número da página (0-indexed) |
+| `size` | int | `20` | Itens por página (máx. 100) |
 
 **Resposta (200 OK):**
 ```json
@@ -275,57 +284,62 @@ GET http://localhost:8081/api/orders/{id}/status
 
 ```powershell
 # Todos os testes (unitários + integração com Testcontainers)
+# Requer Docker Desktop em execução
 .\mvnw.cmd test
 
-# Apenas uma classe de teste
+# Apenas testes unitários (sem Docker)
+.\mvnw.cmd test -Dtest="!OrderServiceApplicationTests"
+
+# Uma classe específica
 .\mvnw.cmd test -Dtest=CreateOrderUseCaseImplTest
 ```
 
-> **Nota:** Os testes unitários não precisam de Docker. São isolados com Mockito.  
-> O teste de integração (`OrderServiceApplicationTests`) usa **Testcontainers** e requer Docker em execução.
+> **Nota:** Os testes unitários são completamente isolados com Mockito e `SimpleMeterRegistry` — não requerem Docker, banco de dados ou Kafka.  
+> O teste de integração (`OrderServiceApplicationTests`) usa **Testcontainers** para subir PostgreSQL e Kafka reais e requer Docker Desktop em execução.
 
 ### Inventário de testes
 
 | Classe de Teste | Tipo | Cenários cobertos |
 |---|---|---|
 | `OrderTest` | Unitário | Criação com status PENDING, IDs únicos, rejeição de customerId nulo, amount zero e negativo, transição para PROCESSED, rejeição de duplo processamento |
-| `CreateOrderUseCaseImplTest` | Unitário | Ordem de save → publish, status PENDING retornado, mesmo ID salvo e publicado, wrapping de InterruptedException, falha de publicação, null customerId |
-| `ProcessOrderUseCaseImplTest` | Unitário | Processamento e atualização de status, idempotência (evento duplicado ignorado), OrderNotFoundException para ID desconhecido |
+| `CreateOrderUseCaseImplTest` | Unitário | Ordem de save → publish, status PENDING retornado, mesmo ID salvo e publicado, wrapping de InterruptedException, falha de publicação, null customerId, amount zero |
+| `ProcessOrderUseCaseImplTest` | Unitário | Processamento e atualização de status, idempotência (evento duplicado ignorado), `markAsProcessed` chamado no domínio, `OrderNotFoundException` para ID desconhecido |
 | `FindOrderUseCaseImplTest` | Unitário | Pedido encontrado por ID, Optional vazio quando não encontrado |
 | `GetOrderStatusUseCaseImplTest` | Unitário | Status PENDING, status PROCESSED, Optional vazio quando não encontrado |
-| `ListOrdersUseCaseImplTest` | Unitário | Lista com 2 pedidos retornada corretamente, lista vazia quando sem pedidos |
-| `OrderControllerTest` | Unitário | POST delega ao use case e retorna PENDING, GET `/{id}` 200 com body completo, GET `/{id}` 404, GET `/{id}/status` 200, GET `/{id}/status` 404, GET `/` lista com 2 pedidos, GET `/` lista vazia, propagação de EventPublishingException |
-| `GlobalExceptionHandlerTest` | Unitário | 400 ConstraintViolationException, 400 MethodArgumentNotValidException com lista de erros, 503 EventPublishingException sem expor "Kafka", 405 com método e link docs, 404 NoResourceFoundException com path e link docs, 404 OrderNotFoundException com ID na mensagem, 500 genérico sem stack trace |
-| `KafkaOrderEventPublisherTest` | Unitário | orderId como chave do ProducerRecord, headers `source` e `eventType` em UTF-8, CompletableFuture falho em erro do broker |
-| `OrderConsumerTest` | Unitário | Processamento com incremento de `success`, exceção relançada com incremento de `error`, `success` nunca incrementado em falha, contador `dlt` incrementado no DLT handler |
+| `ListOrdersUseCaseImplTest` | Unitário | Lista completa com 2 pedidos, lista vazia, lista paginada com `page` e `size`, página vazia |
+| `OrderControllerTest` | Unitário | POST delega ao use case e retorna PENDING, GET `/{id}` 200 com body completo, GET `/{id}` 404, GET `/{id}/status` 200, GET `/{id}/status` 404, GET `/` lista com 2 pedidos, GET `/` lista vazia, propagação de `EventPublishingException` |
+| `GlobalExceptionHandlerTest` | Unitário | 400 `ConstraintViolationException`, 400 `MethodArgumentNotValidException` com lista de erros, 503 `EventPublishingException` sem expor detalhes internos, 405 com método e link docs, 404 `NoResourceFoundException` sem expor path, 404 `OrderNotFoundException` com ID na mensagem, 500 genérico sem stack trace |
+| `KafkaOrderEventPublisherTest` | Unitário | `orderId` como chave do `ProducerRecord`, headers `source` e `eventType` em UTF-8, `CompletableFuture` falho em erro do broker |
+| `OrderConsumerTest` | Unitário | Processamento com incremento de contador `success`, exceção relançada com incremento de `error`, `success` nunca incrementado em falha, contador `dlt` incrementado no DLT handler |
 | `OrderEntityTest` | Unitário | Mapeamento completo domínio → entidade → domínio (round-trip), preservação do status PROCESSED, reconstituição de pedido PENDING |
-| `OrderReadRepositoryAdapterTest` | Unitário | `findById` com order mapeado, `findById` retorna vazio, `existsByIdAndStatus` true e false, `findAll` com 2 pedidos, `findAll` vazio |
-| `OrderWriteRepositoryAdapterTest` | Unitário | `save` delega ao JPA, `updateStatus` com PROCESSED e com FAILED |
+| `OrderReadRepositoryAdapterTest` | Unitário | `findById` com order mapeado, `findById` retorna vazio, `existsByIdAndStatus` true e false, `findAll` com 2 pedidos, `findAll` vazio, `findAll` paginado com 2 pedidos, `findAll` paginado vazio |
+| `OrderWriteRepositoryAdapterTest` | Unitário | `save` delega ao JPA, `updateStatus` com PROCESSED, `updateStatus` com FAILED |
 | `RootControllerTest` | Unitário | Redirect para `/swagger-ui.html` |
-| `OrderServiceApplicationTests` | Integração | Context load com PostgreSQL e Kafka reais via Testcontainers (`ConfluentKafkaContainer` — KRaft) |
+| `SecurityHeadersFilterTest` | Unitário | `X-Frame-Options: DENY`, `X-Content-Type-Options: nosniff`, HSTS, CSP, `Referrer-Policy`, `Permissions-Policy`, `Cache-Control`, delegação ao próximo filtro |
+| `KafkaTopicConfigTest` | Unitário | Nome correto para cada um dos 6 tópicos Kafka criados pelos beans |
+| `OpenApiConfigTest` | Unitário | Título, versão, descrição e dados de contato do bean `OpenAPI` |
+| `KafkaStreamsConfigTest` | Unitário | Bootstrap servers, application ID, state dir, processamento EOS v2, commit interval |
+| `OrderMetricsStreamTest` | Unitário | Leitura do tópico `orders-topic`, escrita no tópico `order-metrics-topic` |
+| `OrderServiceApplicationTests` | **Integração** | Context load com PostgreSQL e Kafka reais via Testcontainers (KRaft, sem Zookeeper) |
+
+**Total: 91 testes unitários + 1 teste de integração**
 
 ### Cobertura de testes
 
-| Pacote / Classe | Classes | Linhas | Observação |
-|---|---|---|---|
-| **`application`** | **100%** | **~99%** | |
-| `adapter.in.kafka` — `OrderConsumer` | 100% | 100% | |
-| `adapter.in.web` — `OrderController` | 100% | 100% | Todos os endpoints incluindo `listOrders()` |
-| `adapter.in.web` — `GlobalExceptionHandler` | 100% | 100% | 7 handlers testados individualmente |
-| `adapter.in.web` — `RootController` | 100% | 100% | |
-| `adapter.out.kafka` — `KafkaOrderEventPublisher` | 100% | 100% | |
-| `adapter.out.persistence` — `OrderReadRepositoryAdapter` | 100% | 100% | Inclui `findAll()` |
-| `adapter.out.persistence` — `OrderWriteRepositoryAdapter` | 100% | 100% | |
-| `adapter.out.persistence` — `OrderEntity` | 100% | 100% | |
-| `usecase` — `CreateOrderUseCaseImpl` | 100% | 100% | |
-| `usecase` — `FindOrderUseCaseImpl` | 100% | 100% | |
-| `usecase` — `GetOrderStatusUseCaseImpl` | 100% | 100% | |
-| `usecase` — `ListOrdersUseCaseImpl` | 100% | 100% | |
-| `usecase` — `ProcessOrderUseCaseImpl` | 100% | 100% | |
-| **`domain`** | **100%** | **100%** | |
-| **`infrastructure`** | **~85%** | **~96%** | `KafkaStreamsConfig`, `OpenApiConfig` não testadas |
-| `OrderServiceApplication` | 0% | 0% | Coberto apenas no teste de integração |
-
+| Pacote | Instrução | Observação |
+|---|---|---|
+| `application.adapter.in.kafka` | **100%** | `OrderConsumer` — métricas verificadas via `SimpleMeterRegistry` |
+| `application.adapter.in.web` | **99%** | `OrderController`, `GlobalExceptionHandler`, `RootController` |
+| `application.adapter.out.kafka` | **100%** | `KafkaOrderEventPublisher` |
+| `application.adapter.out.persistence` | **100%** | `OrderEntity`, `OrderReadRepositoryAdapter`, `OrderWriteRepositoryAdapter` |
+| `application.dto` | **100%** | `OrderRequest`, `OrderResponse`, `OrderEvent` |
+| `application.usecase` | **100%** | Todos os 5 use cases |
+| `domain.exception` | **100%** | `EventPublishingException`, `OrderNotFoundException` |
+| `domain.model` | **100%** | `Order`, `OrderStatus` |
+| `infrastructure.config` | **100%** | `KafkaTopicConfig`, `KafkaStreamsConfig`, `OpenApiConfig`, `SecurityHeadersFilter`, `KafkaProperties` |
+| `infrastructure.streams` | **65%** | `OrderMetricsStream` — lambdas internas da DSL Kafka Streams só executam com mensagens reais |
+| `com.olivertech.orderservice` | **0%** | `OrderServiceApplication.main()` — coberto apenas no teste de integração |
+| **Total geral** | **~96%** | Medido com JaCoCo (`mvn verify`) |
 
 ---
 
@@ -361,7 +375,7 @@ As configurações ficam em `src/main/resources/application.properties`.
 
 | Propriedade | Padrão (dev) | Descrição |
 |---|---|---|
-| `server.port` | `8081` | Porta da aplicação |
+| `server.port` | `8081` | Porta da API |
 | `spring.datasource.url` | `jdbc:postgresql://localhost:5433/orderdb` | URL do banco de dados |
 | `spring.datasource.username` | `postgres` | Usuário do banco — sobrescreva com `$PGUSER` |
 | `spring.datasource.password` | `postgres` | Senha do banco — sobrescreva com `$PGPASSWORD` |
@@ -369,6 +383,8 @@ As configurações ficam em `src/main/resources/application.properties`.
 | `kafka.topics.orders` | `orders-topic` | Tópico principal de pedidos |
 | `kafka.partitions` | `3` | Número de partições dos tópicos |
 | `kafka.replicas` | `1` | Fator de replicação (1 para dev local) |
+| `management.server.port` | `9090` | Porta do Actuator (separada da API) |
+| `management.server.address` | `127.0.0.1` | Actuator acessível apenas localmente |
 
 Para produção, use o perfil `prod` com variáveis de ambiente (veja `application-prod.properties`):
 ```bash
@@ -414,7 +430,7 @@ Exceções de desserialização (`DeserializationException`, `JsonParseException
 ## 🏥 Health Check
 
 ```powershell
-Invoke-RestMethod http://localhost:8081/actuator/health
+Invoke-RestMethod http://localhost:9090/actuator/health
 ```
 
 Resposta esperada:
@@ -481,7 +497,9 @@ Stop-Process -Id <PID>
 .\mvnw.cmd clean package
 ```
 
-### App container não conecta ao KafkaSintoma: `Connection refused` ou `LEADER_NOT_AVAILABLE` mesmo com Kafka saudável.
+### App container não conecta ao Kafka
+
+Sintoma: `Connection refused` ou `LEADER_NOT_AVAILABLE` mesmo com Kafka saudável.
 
 Causa: o container da app está usando `kafka:9092` (listener `PLAINTEXT_HOST` que anuncia `localhost:9092`). Dentro do container, `localhost` aponta para o próprio container, não para o Kafka.
 
@@ -502,3 +520,20 @@ Executing SQL script from class path resource [schema.sql]
 
 Se isso não aparecer, verifique se `spring.jpa.defer-datasource-initialization=true` está ativo e se a conexão com o banco está saudável (`/actuator/health`).
 
+### Teste de integração falha — Docker não encontrado
+
+O `OrderServiceApplicationTests` usa Testcontainers para subir PostgreSQL e Kafka reais. Se o Docker Desktop não estiver em execução:
+
+```
+IllegalStateException: Could not find a valid Docker environment.
+```
+
+Solução: inicie o Docker Desktop e aguarde ele ficar totalmente disponível antes de rodar `.\mvnw.cmd test`. Para rodar apenas os testes unitários sem Docker:
+
+```powershell
+.\mvnw.cmd test -Dtest="!OrderServiceApplicationTests"
+```
+
+### Erros de log nos testes unitários
+
+Mensagens como `ERROR GlobalExceptionHandler — Erro inesperado` ou `ERROR OrderConsumer — [DLT]` aparecem no output dos testes são **esperadas** — fazem parte do comportamento testado. O `GlobalExceptionHandlerTest` propositalmente lança exceções para validar os handlers, e o `OrderConsumerTest` testa o caminho de erro do consumidor. Não indicam falha.
