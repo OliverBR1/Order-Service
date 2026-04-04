@@ -23,9 +23,6 @@ services:
     environment:
       KAFKA_NODE_ID: 1
       KAFKA_PROCESS_ROLES: broker,controller
-      # PLAINTEXT_HOST → acessível do host (app Spring Boot local) via 0.0.0.0
-      # PLAINTEXT      → acessível por containers Docker (kafka-ui) via hostname kafka
-      # CONTROLLER     → comunicação interna KRaft via hostname kafka
       KAFKA_LISTENER_SECURITY_PROTOCOL_MAP: PLAINTEXT_HOST:PLAINTEXT,PLAINTEXT:PLAINTEXT,CONTROLLER:PLAINTEXT
       KAFKA_LISTENERS: PLAINTEXT_HOST://0.0.0.0:9092,PLAINTEXT://kafka:29092,CONTROLLER://kafka:9093
       KAFKA_ADVERTISED_LISTENERS: PLAINTEXT_HOST://localhost:9092,PLAINTEXT://kafka:29092
@@ -33,10 +30,8 @@ services:
       KAFKA_CONTROLLER_QUORUM_VOTERS: 1@kafka:9093
       KAFKA_CONTROLLER_LISTENER_NAMES: CONTROLLER
       KAFKA_OFFSETS_TOPIC_REPLICATION_FACTOR: 1
-      # Necessário para EXACTLY_ONCE_V2 com broker único
       KAFKA_TRANSACTION_STATE_LOG_REPLICATION_FACTOR: 1
       KAFKA_TRANSACTION_STATE_LOG_MIN_ISR: 1
-      # Diretório de logs persistente (evita re-formatação a cada reinício)
       KAFKA_LOG_DIRS: /var/lib/kafka/data
       CLUSTER_ID: "MkU3OEVBNTcwNTJENDM2Qk"
     volumes:
@@ -57,7 +52,6 @@ services:
       - "8090:8080"
     environment:
       KAFKA_CLUSTERS_0_NAME: local
-      # Usa o listener interno para comunicação Docker-a-Docker
       KAFKA_CLUSTERS_0_BOOTSTRAPSERVERS: kafka:29092
 
 volumes:
