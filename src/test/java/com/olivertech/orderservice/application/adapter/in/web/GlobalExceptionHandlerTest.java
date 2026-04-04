@@ -12,6 +12,7 @@ import org.springframework.web.bind.MethodArgumentNotValidException;
 import org.springframework.web.servlet.resource.NoResourceFoundException;
 
 import java.util.List;
+import java.util.Map;
 import java.util.Set;
 
 import static org.assertj.core.api.Assertions.assertThat;
@@ -24,7 +25,7 @@ class GlobalExceptionHandlerTest {
 
     @Test
     void shouldReturn400ForConstraintViolation() {
-        var result = handler.handleConstraintViolation(
+        Map<String, String> result = handler.handleConstraintViolation(
                 new ConstraintViolationException("ID inválido", Set.of()));
         assertThat(result).containsKey("error");
     }
@@ -37,7 +38,7 @@ class GlobalExceptionHandlerTest {
         when(bindingResult.getFieldErrors()).thenReturn(List.of(
                 new FieldError("request", "customerId", "não pode ser vazio")));
 
-        var result = handler.handleValidation(ex);
+        Map<String, List<String>> result = handler.handleValidation(ex);
 
         assertThat(result).containsKey("errors");
         assertThat(result.get("errors")).contains("não pode ser vazio");
@@ -45,7 +46,7 @@ class GlobalExceptionHandlerTest {
 
     @Test
     void shouldReturn503WithoutKafkaDetails() {
-        var result = handler.handlePublishingFailure(
+        Map<String, String> result = handler.handlePublishingFailure(
                 new EventPublishingException("Kafka offline", null));
         assertThat(result.get("error"))
                 .doesNotContain("Kafka")
@@ -54,7 +55,7 @@ class GlobalExceptionHandlerTest {
 
     @Test
     void shouldReturn405WithAllowedMethodsAndDocsLink() {
-        var result = handler.handleMethodNotAllowed(
+        Map<String, String> result = handler.handleMethodNotAllowed(
                 new HttpRequestMethodNotSupportedException("GET", List.of("POST")));
         assertThat(result)
                 .containsKey("error")
@@ -65,7 +66,7 @@ class GlobalExceptionHandlerTest {
 
     @Test
     void shouldReturn404WithoutExposingResourcePath() {
-        var result = handler.handleNoResourceFound(
+        Map<String, String> result = handler.handleNoResourceFound(
                 new NoResourceFoundException(HttpMethod.GET, "/nao-existe" , "/nao-existe"));
         assertThat(result)
                 .containsKey("error")
@@ -77,13 +78,13 @@ class GlobalExceptionHandlerTest {
 
     @Test
     void shouldReturn404WithOrderIdInMessage() {
-        var result = handler.handleOrderNotFound(new OrderNotFoundException("abc-123"));
+        Map<String, String> result = handler.handleOrderNotFound(new OrderNotFoundException("abc-123"));
         assertThat(result.get("error")).contains("abc-123");
     }
 
     @Test
     void shouldReturn500WithGenericMessage() {
-        var result = handler.handleUnexpected(new RuntimeException("boom"));
+        Map<String, String> result = handler.handleUnexpected(new RuntimeException("boom"));
         assertThat(result.get("error")).contains("Erro interno");
     }
 }

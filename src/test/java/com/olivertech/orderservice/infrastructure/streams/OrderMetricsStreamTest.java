@@ -53,7 +53,6 @@ class OrderMetricsStreamTest {
         when(filtered.groupBy(any(), any(Grouped.class))).thenReturn(grouped);
         when(grouped.count(any(Materialized.class))).thenReturn(table);
         when(table.toStream()).thenReturn(tableStream);
-        // mapValues com lambda (k, v) -> ... é ValueMapperWithKey — cast para desambiguar
         doReturn(mapped).when(tableStream).mapValues((ValueMapperWithKey) any());
     }
 

@@ -90,10 +90,9 @@ class OrderReadRepositoryAdapterTest {
     void findAllPaged_shouldReturnPagedOrders() {
         Order o1 = Order.create("cust-1", new BigDecimal("10.00"));
         Order o2 = Order.create("cust-2", new BigDecimal("20.00"));
-        var pageable = PageRequest.of(0, 20, Sort.by("createdAt").descending());
-        var entities = List.of(OrderEntity.from(o1), OrderEntity.from(o2));
-        // PageImpl(content, pageable, total) — pageable e total explícitos
-        var page = new PageImpl<>(entities, pageable, entities.size());
+        PageRequest pageable = PageRequest.of(0, 20, Sort.by("createdAt").descending());
+        List<OrderEntity> entities = List.of(OrderEntity.from(o1), OrderEntity.from(o2));
+        PageImpl<OrderEntity> page = new PageImpl<>(entities, pageable, entities.size());
         when(jpaRepo.findAll(pageable)).thenReturn(page);
 
         List<Order> result = adapter.findAll(0, 20);
@@ -105,8 +104,7 @@ class OrderReadRepositoryAdapterTest {
 
     @Test
     void findAllPaged_shouldReturnEmptyPageWhenNoOrders() {
-        var pageable = PageRequest.of(0, 20, Sort.by("createdAt").descending());
-        // PageImpl(emptyList, pageable, 0) — total explícito como 0
+        PageRequest pageable = PageRequest.of(0, 20, Sort.by("createdAt").descending());
         when(jpaRepo.findAll(pageable)).thenReturn(new PageImpl<>(List.of(), pageable, 0));
 
         assertThat(adapter.findAll(0, 20)).isEmpty();

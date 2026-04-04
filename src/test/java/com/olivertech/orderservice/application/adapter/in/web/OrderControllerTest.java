@@ -15,6 +15,7 @@ import org.mockito.InjectMocks;
 import org.mockito.Mock;
 import org.mockito.junit.jupiter.MockitoExtension;
 import org.springframework.http.HttpStatus;
+import org.springframework.http.ResponseEntity;
 
 import java.math.BigDecimal;
 import java.util.List;
@@ -53,7 +54,7 @@ class OrderControllerTest {
         Order order = Order.create("c", BigDecimal.TEN);
         when(findUC.execute(order.getId())).thenReturn(Optional.of(order));
 
-        var response = controller.getOrder(order.getId());
+        ResponseEntity<OrderResponse> response = controller.getOrder(order.getId());
 
         assertThat(response.getStatusCode()).isEqualTo(HttpStatus.OK);
         assertThat(response.getBody()).isNotNull();
