@@ -87,8 +87,6 @@ class GlobalExceptionHandlerTest {
 
     @Test
     void shouldReturn404WithGenericMessageWithoutExposingOrderId() {
-        // B4 FIX: o ID não deve ser ecoado na resposta — evita enumeração diferencial
-        // (404 com ID confirmado vs 400 com formato inválido)
         Map<String, String> result = handler.handleOrderNotFound(new OrderNotFoundException("abc-123"));
         assertThat(result.get("error"))
                 .doesNotContain("abc-123")
