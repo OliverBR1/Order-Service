@@ -15,15 +15,6 @@ import org.springframework.web.filter.OncePerRequestFilter;
 import java.io.IOException;
 import java.util.concurrent.ConcurrentHashMap;
 
-/**
- * Rate limiter baseado em janela fixa (Fixed Window Counter).
- * Implementado sem dependências externas, usando ConcurrentHashMap + AtomicInteger.
- *
- * Roda em @Order(-200), antes do Spring Security (@Order(-100)),
- * para bloquear DoS mesmo de requisições não autenticadas sem custo de autenticação.
- *
- * Limites: 100 requisições / minuto por cliente (API key ou IP de origem).
- */
 @Component
 @Order(-200)
 public class RateLimitFilter extends OncePerRequestFilter {
@@ -33,10 +24,6 @@ public class RateLimitFilter extends OncePerRequestFilter {
     private static final int  LIMIT_PER_WINDOW  = 100;
     private static final long WINDOW_MILLIS     = 60_000L; // 1 minuto
 
-    /**
-     * Bucket: [0] = contagem de requisições, [1] = início da janela em ms (AtomicLong via long em array)
-     * Usamos Object[] para poder armazenar tanto o counter quanto o timestamp.
-     */
     private final ConcurrentHashMap<String, long[]> counters = new ConcurrentHashMap<>();
 
     @Override
@@ -46,13 +33,11 @@ public class RateLimitFilter extends OncePerRequestFilter {
         String clientId = resolveClientId(request);
         long   now      = System.currentTimeMillis();
 
-        // computeIfAbsent garante criação atômica; synchronized no array para incremento seguro
         long[] window = counters.computeIfAbsent(clientId, k -> new long[]{0L, now});
 
         boolean allowed;
         synchronized (window) {
             if (now - window[1] >= WINDOW_MILLIS) {
-                // Janela expirada: reinicia contador e timestamp
                 window[0] = 1L;
                 window[1] = now;
                 allowed = true;
@@ -77,10 +62,6 @@ public class RateLimitFilter extends OncePerRequestFilter {
         filterChain.doFilter(request, response);
     }
 
-    /**
-     * Identifica o cliente pela API Key (se presente) ou pelo IP de origem.
-     * Usa apenas o primeiro IP do header X-Forwarded-For para evitar spoofing com lista de IPs.
-     */
     private String resolveClientId(HttpServletRequest request) {
         String apiKey = request.getHeader("X-API-Key");
         if (apiKey != null && !apiKey.isBlank()) {

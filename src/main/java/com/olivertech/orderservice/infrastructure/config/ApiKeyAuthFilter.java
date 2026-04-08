@@ -13,11 +13,6 @@ import java.nio.charset.StandardCharsets;
 import java.security.MessageDigest;
 import java.util.List;
 
-/**
- * Valida o header {@code X-API-Key} em tempo constante (resistente a timing attacks).
- * Se a chave for válida, autentica o cliente no SecurityContext do Spring Security.
- * Não é anotado como {@code @Component} para evitar registro duplo como Servlet filter.
- */
 public class ApiKeyAuthFilter extends OncePerRequestFilter {
 
     public static final String API_KEY_HEADER = "X-API-Key";

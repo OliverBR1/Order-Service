@@ -23,18 +23,12 @@ public class GlobalExceptionHandler {
     private static final Logger log =
             LoggerFactory.getLogger(GlobalExceptionHandler.class);
 
-    /**
-     * Trata violações de constraints em @PathVariable e @RequestParam.
-     * Extrai apenas o nome do campo (ex: "id"), sem expor o nome do método Java interno.
-     * Antes: "getOrder.id: ID inválido" → Agora: "id: ID inválido"
-     */
     @ExceptionHandler(ConstraintViolationException.class)
     @ResponseStatus(HttpStatus.BAD_REQUEST)
     public Map<String, List<String>> handleConstraintViolation(ConstraintViolationException ex) {
         List<String> messages = ex.getConstraintViolations().stream()
                 .map(v -> {
                     String path  = v.getPropertyPath().toString();
-                    // Pega apenas a última parte do path (nome do campo, não do método)
                     String field = path.contains(".") ? path.substring(path.lastIndexOf('.') + 1) : path;
                     return field + ": " + v.getMessage();
                 })
@@ -78,10 +72,6 @@ public class GlobalExceptionHandler {
         return Map.of("error", "Serviço temporariamente indisponível. Tente novamente.");
     }
 
-    /**
-     * Retorna mensagem genérica, sem ecoar o ID do pedido no response.
-     * Evita enumeração diferencial (404 com ID confirmado vs 400 com formato inválido).
-     */
     @ExceptionHandler(OrderNotFoundException.class)
     @ResponseStatus(HttpStatus.NOT_FOUND)
     public Map<String, String> handleOrderNotFound(OrderNotFoundException ex) {

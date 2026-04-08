@@ -12,21 +12,13 @@ import org.springframework.web.filter.OncePerRequestFilter;
 
 import java.io.IOException;
 
-/**
- * Injeta security headers em TODAS as respostas HTTP.
- * Executado com HIGHEST_PRECEDENCE para garantir que mesmo respostas
- * rejeitadas pelo Spring Security (401/403) e pelo RateLimitFilter (429)
- * recebam os headers de segurança.
- */
 @Component
 @Order(Ordered.HIGHEST_PRECEDENCE)
 public class SecurityHeadersFilter extends OncePerRequestFilter {
 
-    /** CSP configurável por ambiente via application.properties */
     @Value("${security.headers.csp}")
     private String contentSecurityPolicy;
 
-    /** HSTS deve ser habilitado apenas quando TLS estiver ativo (produção) */
     @Value("${security.headers.hsts.enabled:false}")
     private boolean hstsEnabled;
 
@@ -45,11 +37,9 @@ public class SecurityHeadersFilter extends OncePerRequestFilter {
         response.setHeader("Cache-Control", "no-store");
         response.setHeader("Pragma",        "no-cache");
 
-        // Remove headers que revelam tecnologia usada
         response.setHeader("X-Powered-By", "");
         response.setHeader("Server",       "");
 
-        // HSTS só faz sentido com HTTPS — habilitado apenas em produção
         if (hstsEnabled) {
             response.setHeader("Strict-Transport-Security",
                     "max-age=31536000; includeSubDomains; preload");

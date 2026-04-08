@@ -18,7 +18,6 @@ public record OrderRequest(
                 maxLength = 100, requiredMode = Schema.RequiredMode.REQUIRED)
         @NotBlank
         @Size(max = 100, message = "customerId deve ter no máximo 100 caracteres")
-        // Bloqueia XSS: rejeita < > " ' & e qualquer tag HTML/script
         @Pattern(
                 regexp = "^[\\w\\-. @]+$",
                 message = "customerId contém caracteres inválidos. Use apenas letras, números, hífen, ponto, espaço ou @"

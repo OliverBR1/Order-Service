@@ -21,7 +21,6 @@ public class OpenApiConfig {
                         .contact(new Contact()
                                 .name("Time de Engenharia")
                                 .email("eng@empresa.com")))
-                // Registra o esquema de segurança X-API-Key para o Swagger UI
                 .components(new Components()
                         .addSecuritySchemes("X-API-Key", new SecurityScheme()
                                 .type(SecurityScheme.Type.APIKEY)
