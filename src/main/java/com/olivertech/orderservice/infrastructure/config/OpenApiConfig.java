@@ -3,6 +3,8 @@ package com.olivertech.orderservice.infrastructure.config;
 import io.swagger.v3.oas.models.OpenAPI;
 import io.swagger.v3.oas.models.info.Contact;
 import io.swagger.v3.oas.models.info.Info;
+import io.swagger.v3.oas.models.security.SecurityScheme;
+import io.swagger.v3.oas.models.Components;
 import org.springframework.context.annotation.Bean;
 import org.springframework.context.annotation.Configuration;
 
@@ -18,7 +20,13 @@ public class OpenApiConfig {
                         .version("v1.0.0")
                         .contact(new Contact()
                                 .name("Time de Engenharia")
-                                .email("eng@empresa.com")));
+                                .email("eng@empresa.com")))
+                // Registra o esquema de segurança X-API-Key para o Swagger UI
+                .components(new Components()
+                        .addSecuritySchemes("X-API-Key", new SecurityScheme()
+                                .type(SecurityScheme.Type.APIKEY)
+                                .in(SecurityScheme.In.HEADER)
+                                .name("X-API-Key")
+                                .description("Chave de API obrigatória. Enviar via header X-API-Key.")));
     }
 }
-

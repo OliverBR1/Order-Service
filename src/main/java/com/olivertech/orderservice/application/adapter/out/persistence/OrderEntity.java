@@ -15,15 +15,16 @@ import java.time.Instant;
 public class OrderEntity {
 
     @Id
+    @Column(length = 36, updatable = false, nullable = false)
     private String id;
 
-    @Column(nullable = false)
+    @Column(name = "customer_id", length = 100, nullable = false)
     private String customerId;
 
     @Column(nullable = false, precision = 19, scale = 2)
     private BigDecimal amount;
 
-    @Column(nullable = false)
+    @Column(length = 50, nullable = false)
     private String status;
 
     @Column(nullable = false)

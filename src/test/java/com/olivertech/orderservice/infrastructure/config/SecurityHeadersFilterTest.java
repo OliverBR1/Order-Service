@@ -5,19 +5,24 @@ import org.junit.jupiter.api.Test;
 import org.springframework.mock.web.MockFilterChain;
 import org.springframework.mock.web.MockHttpServletRequest;
 import org.springframework.mock.web.MockHttpServletResponse;
+import org.springframework.test.util.ReflectionTestUtils;
 
 import static org.assertj.core.api.Assertions.assertThat;
 
 class SecurityHeadersFilterTest {
 
-    SecurityHeadersFilter filter;
+    private static final String TEST_CSP = "default-src 'none'; frame-ancestors 'none'";
+
+    SecurityHeadersFilter   filter;
     MockHttpServletRequest  request;
     MockHttpServletResponse response;
     MockFilterChain         chain;
 
     @BeforeEach
     void setup() {
-        filter   = new SecurityHeadersFilter();
+        filter = new SecurityHeadersFilter();
+        ReflectionTestUtils.setField(filter, "contentSecurityPolicy", TEST_CSP);
+        ReflectionTestUtils.setField(filter, "hstsEnabled", false); // padrão dev = false
         request  = new MockHttpServletRequest();
         response = new MockHttpServletResponse();
         chain    = new MockFilterChain();
@@ -36,17 +41,24 @@ class SecurityHeadersFilterTest {
     }
 
     @Test
-    void shouldSetStrictTransportSecurity() throws Exception {
+    void shouldSetContentSecurityPolicyFromConfig() throws Exception {
+        // M2 FIX: CSP é configurável por ambiente via @Value
         filter.doFilter(request, response, chain);
-        assertThat(response.getHeader("Strict-Transport-Security"))
-                .isEqualTo("max-age=31536000; includeSubDomains");
+        assertThat(response.getHeader("Content-Security-Policy")).isEqualTo(TEST_CSP);
     }
 
     @Test
-    void shouldSetContentSecurityPolicy() throws Exception {
+    void shouldNotSetHstsWhenDisabled() throws Exception {
         filter.doFilter(request, response, chain);
-        assertThat(response.getHeader("Content-Security-Policy"))
-                .isEqualTo("default-src 'none'; frame-ancestors 'none'");
+        assertThat(response.getHeader("Strict-Transport-Security")).isNull();
+    }
+
+    @Test
+    void shouldSetHstsWhenEnabled() throws Exception {
+        ReflectionTestUtils.setField(filter, "hstsEnabled", true);
+        filter.doFilter(request, response, chain);
+        assertThat(response.getHeader("Strict-Transport-Security"))
+                .isEqualTo("max-age=31536000; includeSubDomains; preload");
     }
 
     @Test
@@ -70,9 +82,15 @@ class SecurityHeadersFilterTest {
     }
 
     @Test
+    void shouldSuppressTechnologyDisclosureHeaders() throws Exception {
+        filter.doFilter(request, response, chain);
+        assertThat(response.getHeader("X-Powered-By")).isEmpty();
+        assertThat(response.getHeader("Server")).isEmpty();
+    }
+
+    @Test
     void shouldDelegateToNextFilter() throws Exception {
         filter.doFilter(request, response, chain);
-        // MockFilterChain records the last request/response passed through
         assertThat(chain.getRequest()).isNotNull();
     }
 }

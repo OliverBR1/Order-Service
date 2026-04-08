@@ -23,11 +23,20 @@ class GlobalExceptionHandlerTest {
 
     GlobalExceptionHandler handler = new GlobalExceptionHandler();
 
+
     @Test
     void shouldReturn400ForConstraintViolation() {
-        Map<String, String> result = handler.handleConstraintViolation(
+        Map<String, List<String>> result = handler.handleConstraintViolation(
                 new ConstraintViolationException("ID inválido", Set.of()));
-        assertThat(result).containsKey("error");
+        assertThat(result).containsKey("errors");
+        assertThat(result.get("errors")).isInstanceOf(List.class);
+    }
+
+    @Test
+    void shouldNotExposeMethodNameInConstraintViolationResponse() {
+        Map<String, List<String>> result = handler.handleConstraintViolation(
+                new ConstraintViolationException("test", Set.of()));
+        assertThat(result).doesNotContainKey("error");
     }
 
     @Test
@@ -67,7 +76,7 @@ class GlobalExceptionHandlerTest {
     @Test
     void shouldReturn404WithoutExposingResourcePath() {
         Map<String, String> result = handler.handleNoResourceFound(
-                new NoResourceFoundException(HttpMethod.GET, "/nao-existe" , "/nao-existe"));
+                new NoResourceFoundException(HttpMethod.GET, "/nao-existe", "/nao-existe"));
         assertThat(result)
                 .containsKey("error")
                 .containsEntry("docs", "/swagger-ui.html");
@@ -77,9 +86,13 @@ class GlobalExceptionHandlerTest {
     }
 
     @Test
-    void shouldReturn404WithOrderIdInMessage() {
+    void shouldReturn404WithGenericMessageWithoutExposingOrderId() {
+        // B4 FIX: o ID não deve ser ecoado na resposta — evita enumeração diferencial
+        // (404 com ID confirmado vs 400 com formato inválido)
         Map<String, String> result = handler.handleOrderNotFound(new OrderNotFoundException("abc-123"));
-        assertThat(result.get("error")).contains("abc-123");
+        assertThat(result.get("error"))
+                .doesNotContain("abc-123")
+                .isEqualTo("Pedido não encontrado");
     }
 
     @Test

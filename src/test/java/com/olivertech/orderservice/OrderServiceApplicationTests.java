@@ -32,6 +32,7 @@ class OrderServiceApplicationTests {
         registry.add("spring.kafka.streams.state-dir",
                 () -> System.getProperty("java.io.tmpdir")
                         + "/kafka-streams-test-" + ProcessHandle.current().pid());
+        registry.add("api.security.key", () -> "integration-test-api-key");
     }
 
     @Test

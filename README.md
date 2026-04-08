@@ -19,6 +19,49 @@ Microsserviço de pedido construído com **Spring Boot 4.0.4**, **Apache Kafka**
 
 ---
 
+## 🔒 Segurança
+
+### Autenticação via API Key
+
+Todos os endpoints `/api/**` exigem o header `X-API-Key`:
+
+```http
+GET /api/orders HTTP/1.1
+Host: localhost:8081
+X-API-Key: dev-api-key-CHANGE-THIS-BEFORE-USE
+```
+
+| Resposta | Situação |
+|---|---|
+| `401 Unauthorized` | Header ausente ou chave inválida |
+| `200 / 202 / 404` | Chave válida |
+
+A chave é configurada pela propriedade `api.security.key` (via variável de ambiente `API_KEY` em produção). A comparação é feita em **tempo constante** (resistente a timing attacks).
+
+### Rate Limiting
+
+Limitado a **100 requisições por minuto** por cliente (identificado pela API Key ou IP de origem). Quando excedido:
+
+```json
+HTTP 429 Too Many Requests
+Retry-After: 60
+
+{ "error": "Limite de requisições excedido. Tente novamente em breve." }
+```
+
+### Security Headers (todas as respostas)
+
+| Header | Valor (produção) |
+|---|---|
+| `X-Frame-Options` | `DENY` |
+| `X-Content-Type-Options` | `nosniff` |
+| `Content-Security-Policy` | `default-src 'none'; frame-ancestors 'none'` |
+| `Referrer-Policy` | `no-referrer` |
+| `Strict-Transport-Security` | `max-age=31536000; includeSubDomains; preload` (só em prod/HTTPS) |
+| `Cache-Control` | `no-store` |
+
+---
+
 ## 🏗️ Arquitetura
 
 ```
@@ -42,7 +85,8 @@ src/main/java/com/olivertech/orderservice/
 │   ├── adapter/out/            # Kafka Producer e JPA Repository
 │   └── dto/                    # OrderRequest, OrderResponse, OrderEvent
 └── infrastructure/             # Configurações técnicas
-    ├── config/                 # Kafka, OpenAPI, Topics, SecurityHeaders
+    ├── config/                 # Kafka, OpenAPI, Topics, SecurityHeaders,
+    │                           # SecurityConfig, ApiKeyAuthFilter, RateLimitFilter
     └── streams/                # Pipeline Kafka Streams de métricas
 
 src/main/resources/
@@ -54,24 +98,22 @@ src/main/resources/
 ### Fluxo completo de um pedido
 
 ```
-Cliente → POST /api/orders
-            ↓
-    CreateOrderUseCase
-    ├── Persiste no PostgreSQL (status=PENDING)
-    └── Publica evento no Kafka (orders-topic)
-            ↓
-    OrderConsumer (Kafka Listener)
-            ↓
-    ProcessOrderUseCase
-    └── Atualiza status para PROCESSED no PostgreSQL
+Cliente → POST /api/orders  (com X-API-Key)
+             ↓
+     RateLimitFilter → ApiKeyAuthFilter → SecurityConfig
+             ↓
+     CreateOrderUseCase
+     ├── Persiste no PostgreSQL (status=PENDING)
+     └── Publica evento no Kafka (orders-topic)
+             ↓
+     OrderConsumer (Kafka Listener)
+             ↓
+     ProcessOrderUseCase
+     └── Atualiza status para PROCESSED no PostgreSQL
 
-Cliente → GET /api/orders/{id}
-            ↓
-    FindOrderUseCase → retorna dados completos do pedido
-
-Cliente → GET /api/orders
-            ↓
-    ListOrdersUseCase → retorna lista paginada de pedidos
+Cliente → GET /api/orders/{id}  (com X-API-Key)
+             ↓
+     FindOrderUseCase → retorna dados completos do pedido
 ```
 
 ---
@@ -88,29 +130,60 @@ Antes de rodar o projeto, você precisa ter instalado:
 
 ## 🚀 Como executar o projeto
 
-### Passo 1 — Suba o banco de dados e o Kafka
+### Passo 1 — Configure as variáveis de ambiente
 
-```bash
-docker-compose up -d
+Copie o arquivo de exemplo e preencha os valores:
+
+```powershell
+Copy-Item .env.example .env
+# Edite o .env com suas senhas e a API Key
+notepad .env
+```
+
+O `.env` é ignorado pelo Git (já está no `.gitignore`). As variáveis obrigatórias são:
+
+| Variável | Descrição |
+|---|---|
+| `PGUSER` | Usuário do PostgreSQL |
+| `PGPASSWORD` | Senha do PostgreSQL |
+| `API_KEY` | Chave de autenticação da API (`X-API-Key`) |
+| `KAFKA_UI_PASSWORD` | Senha do painel web do Kafka UI |
+| `KAFKA_UI_USER` | Usuário do Kafka UI (padrão: `admin`) |
+
+### Passo 2 — Suba o banco de dados e o Kafka
+
+```powershell
+docker-compose up -d postgres kafka kafka-ui
 ```
 
 Aguarde todos os serviços ficarem saudáveis (leva ~30 segundos para o Kafka):
 
-```bash
+```powershell
 docker-compose ps
 # Aguarde todos os STATUS mostrarem "healthy"
 ```
 
-> **Nota:** O arquivo `src/main/resources/application.properties` já contém todos os valores padrão para desenvolvimento local — porta `5433`, Kafka em `localhost:9092`, usuário `postgres` e senha `postgres`. Nenhuma configuração extra é necessária para rodar localmente. Para usar credenciais diferentes, defina `PGUSER` e `PGPASSWORD` como variáveis de ambiente do sistema.
+### Passo 3 — Execute a aplicação
 
-### Passo 2 — Execute a aplicação
+**Opção A — Maven local** (mais rápido para desenvolvimento):
 
 ```powershell
-# Windows PowerShell
 .\mvnw.cmd spring-boot:run
 ```
 
-A aplicação iniciará na porta **8081**.
+**Opção B — Docker completo** (simula produção):
+
+```powershell
+# 1. Gera o JAR
+.\mvnw.cmd clean package -DskipTests
+
+# 2. Sobe todos os serviços incluindo a aplicação
+docker-compose up -d
+```
+
+A API estará disponível em http://localhost:8081.
+
+> **Nota:** O PostgreSQL e o Kafka ficam acessíveis apenas em `127.0.0.1` (não expostos na rede local). O serviço `app` expõe a porta 8081 externamente para receber requisições.
 
 ---
 
@@ -138,8 +211,9 @@ docker run -d `
   -e SPRING_PROFILES_ACTIVE=prod `
   -e DB_URL=jdbc:postgresql://postgres:5432/orderdb `
   -e PGUSER=postgres `
-  -e PGPASSWORD=postgres `
+  -e PGPASSWORD=senha_segura `
   -e KAFKA_BOOTSTRAP_SERVERS=kafka:29092 `
+  -e API_KEY=sua-api-key-segura `
   order-service:latest
 ```
 
@@ -153,11 +227,27 @@ docker run -d `
 
 ### Deploy completo com docker-compose (infra + app)
 
-Adicione o serviço `app` ao `docker-compose.yml`:
+O `docker-compose.yml` já inclui o serviço `app` configurado para produção. Para fazer o deploy completo:
+
+```powershell
+# 1. Gere o JAR
+.\mvnw.cmd clean package -DskipTests
+
+# 2. Suba todos os serviços (infra + aplicação)
+docker-compose up -d
+```
+
+O serviço `app` já está configurado com:
+- `restart: unless-stopped` — reinicia automaticamente em caso de falha
+- `healthcheck` — verifica `http://localhost:9090/actuator/health` a cada 30s
+- `TZ: UTC` — timezone padronizado
+- `depends_on: postgres/kafka: condition: service_healthy` — aguarda infra ficar pronta antes de iniciar
 
 ```yaml
+# Trecho relevante do docker-compose.yml
 app:
   image: order-service:latest
+  build: .
   depends_on:
     postgres:
       condition: service_healthy
@@ -168,9 +258,12 @@ app:
   environment:
     SPRING_PROFILES_ACTIVE: prod
     DB_URL: jdbc:postgresql://postgres:5432/orderdb
-    PGUSER: ${PGUSER:-postgres}
-    PGPASSWORD: ${PGPASSWORD:-postgres}
+    PGUSER: ${PGUSER:?PGUSER obrigatória}
+    PGPASSWORD: ${PGPASSWORD:?PGPASSWORD obrigatória}
     KAFKA_BOOTSTRAP_SERVERS: kafka:29092
+    API_KEY: ${API_KEY:?API_KEY obrigatória}
+    TZ: UTC
+  restart: unless-stopped
 ```
 
 ---
@@ -179,22 +272,25 @@ app:
 
 | Interface | URL | Descrição |
 |---|---|---|
-| **API REST** | http://localhost:8081/api/orders | Endpoints de pedidos |
-| **Swagger UI** | http://localhost:8081/swagger-ui.html | Documentação interativa da API |
-| **Actuator Health** | http://localhost:9090/actuator/health | Status da aplicação |
-| **Métricas Prometheus** | http://localhost:9090/actuator/prometheus | Métricas para monitoramento |
-| **Kafka UI** | http://localhost:8090 | Painel visual dos tópicos Kafka |
+| **API REST** | http://localhost:8081/api/orders | Endpoints de pedidos (requer `X-API-Key`) |
+| **Swagger UI** | http://localhost:8081/swagger-ui.html | Documentação interativa — **disponível apenas em dev** (desabilitado em produção) |
+| **Actuator Health** | http://localhost:9090/actuator/health | Status da aplicação (apenas localhost) |
+| **Métricas Prometheus** | http://localhost:9090/actuator/prometheus | Métricas para monitoramento (apenas localhost) |
+| **Kafka UI** | http://localhost:8090 | Painel visual (requer login — `KAFKA_UI_USER`/`KAFKA_UI_PASSWORD`) |
 
-> **Nota:** O Actuator roda na porta **9090** (separada da API), acessível apenas em `127.0.0.1`. Isso evita expor endpoints de gestão na mesma porta pública da API.
+> **Nota:** Actuator e Kafka UI ficam acessíveis apenas em `127.0.0.1`. A API é acessível externamente. O Swagger é desabilitado automaticamente no perfil `prod` (`springdoc.swagger-ui.enabled=false`).
 
 ---
 
 ## 📡 Endpoints da API
 
+> Todos os endpoints `/api/**` exigem o header `X-API-Key`.
+
 ### Listar todos os pedidos
 
 ```http
 GET http://localhost:8081/api/orders
+X-API-Key: dev-api-key-CHANGE-THIS-BEFORE-USE
 ```
 
 **Parâmetros de query opcionais:**
@@ -224,6 +320,7 @@ GET http://localhost:8081/api/orders
 ```http
 POST http://localhost:8081/api/orders
 Content-Type: application/json
+X-API-Key: dev-api-key-CHANGE-THIS-BEFORE-USE
 
 {
   "customerId": "cliente-123",
@@ -248,6 +345,7 @@ Content-Type: application/json
 
 ```http
 GET http://localhost:8081/api/orders/{id}
+X-API-Key: dev-api-key-CHANGE-THIS-BEFORE-USE
 ```
 
 **Resposta (200 OK):**
@@ -261,7 +359,7 @@ GET http://localhost:8081/api/orders/{id}
 }
 ```
 
-**Resposta (404 Not Found)** — quando o ID não existe.
+**Resposta (404 Not Found)** — mensagem genérica, sem expor o ID pesquisado.
 
 ---
 
@@ -269,6 +367,7 @@ GET http://localhost:8081/api/orders/{id}
 
 ```http
 GET http://localhost:8081/api/orders/{id}/status
+X-API-Key: dev-api-key-CHANGE-THIS-BEFORE-USE
 ```
 
 **Resposta (200 OK):**
@@ -276,7 +375,7 @@ GET http://localhost:8081/api/orders/{id}/status
 "PROCESSED"
 ```
 
-**Resposta (404 Not Found)** — quando o ID não existe.
+**Resposta (404 Not Found)** — mensagem genérica, sem expor o ID pesquisado.
 
 ---
 
@@ -308,21 +407,23 @@ GET http://localhost:8081/api/orders/{id}/status
 | `GetOrderStatusUseCaseImplTest` | Unitário | Status PENDING, status PROCESSED, Optional vazio quando não encontrado |
 | `ListOrdersUseCaseImplTest` | Unitário | Lista completa com 2 pedidos, lista vazia, lista paginada com `page` e `size`, página vazia |
 | `OrderControllerTest` | Unitário | POST delega ao use case e retorna PENDING, GET `/{id}` 200 com body completo, GET `/{id}` 404, GET `/{id}/status` 200, GET `/{id}/status` 404, GET `/` lista com 2 pedidos, GET `/` lista vazia, propagação de `EventPublishingException` |
-| `GlobalExceptionHandlerTest` | Unitário | 400 `ConstraintViolationException`, 400 `MethodArgumentNotValidException` com lista de erros, 503 `EventPublishingException` sem expor detalhes internos, 405 com método e link docs, 404 `NoResourceFoundException` sem expor path, 404 `OrderNotFoundException` com ID na mensagem, 500 genérico sem stack trace |
+| `GlobalExceptionHandlerTest` | Unitário | 400 `ConstraintViolationException` sem expor nome de método Java (M1), 400 `MethodArgumentNotValidException` com lista de erros, 503 `EventPublishingException` sem detalhes internos, 405 com método e link docs, 404 `NoResourceFoundException` sem expor path, 404 `OrderNotFoundException` com mensagem genérica sem ID (B4), 500 genérico sem stack trace |
+| `ApiKeyAuthFilterTest` | Unitário | Autenticação com chave válida, rejeição de chave inválida, rejeição sem chave, delegação ao próximo filtro em todos os casos, resistência a timing attack com chave de mesmo tamanho |
+| `RateLimitFilterTest` | Unitário | Primeira requisição permitida, bloqueio ao exceder limite, sem delegação ao próximo filtro quando bloqueado, reset do contador após janela expirar, preferência de API Key sobre IP, uso do primeiro IP do X-Forwarded-For |
 | `KafkaOrderEventPublisherTest` | Unitário | `orderId` como chave do `ProducerRecord`, headers `source` e `eventType` em UTF-8, `CompletableFuture` falho em erro do broker |
 | `OrderConsumerTest` | Unitário | Processamento com incremento de contador `success`, exceção relançada com incremento de `error`, `success` nunca incrementado em falha, contador `dlt` incrementado no DLT handler |
 | `OrderEntityTest` | Unitário | Mapeamento completo domínio → entidade → domínio (round-trip), preservação do status PROCESSED, reconstituição de pedido PENDING |
 | `OrderReadRepositoryAdapterTest` | Unitário | `findById` com order mapeado, `findById` retorna vazio, `existsByIdAndStatus` true e false, `findAll` com 2 pedidos, `findAll` vazio, `findAll` paginado com 2 pedidos, `findAll` paginado vazio |
 | `OrderWriteRepositoryAdapterTest` | Unitário | `save` delega ao JPA, `updateStatus` com PROCESSED, `updateStatus` com FAILED |
 | `RootControllerTest` | Unitário | Redirect para `/swagger-ui.html` |
-| `SecurityHeadersFilterTest` | Unitário | `X-Frame-Options: DENY`, `X-Content-Type-Options: nosniff`, HSTS, CSP, `Referrer-Policy`, `Permissions-Policy`, `Cache-Control`, delegação ao próximo filtro |
+| `SecurityHeadersFilterTest` | Unitário | `X-Frame-Options: DENY`, `X-Content-Type-Options: nosniff`, CSP configurável via `@Value`, HSTS desabilitado em dev, HSTS habilitado em prod, `Referrer-Policy`, `Permissions-Policy`, `Cache-Control`, supressão de `X-Powered-By`/`Server`, delegação ao próximo filtro |
 | `KafkaTopicConfigTest` | Unitário | Nome correto para cada um dos 6 tópicos Kafka criados pelos beans |
-| `OpenApiConfigTest` | Unitário | Título, versão, descrição e dados de contato do bean `OpenAPI` |
+| `OpenApiConfigTest` | Unitário | Título, versão, descrição, dados de contato e esquema de segurança `X-API-Key` registrado |
 | `KafkaStreamsConfigTest` | Unitário | Bootstrap servers, application ID, state dir, processamento EOS v2, commit interval |
 | `OrderMetricsStreamTest` | Unitário | Leitura do tópico `orders-topic`, escrita no tópico `order-metrics-topic` |
 | `OrderServiceApplicationTests` | **Integração** | Context load com PostgreSQL e Kafka reais via Testcontainers (KRaft, sem Zookeeper) |
 
-**Total: 91 testes unitários + 1 teste de integração**
+**Total: 109 testes unitários + 1 teste de integração**
 
 ### Cobertura de testes
 
@@ -336,7 +437,7 @@ GET http://localhost:8081/api/orders/{id}/status
 | `application.usecase` | **100%** | Todos os 5 use cases |
 | `domain.exception` | **100%** | `EventPublishingException`, `OrderNotFoundException` |
 | `domain.model` | **100%** | `Order`, `OrderStatus` |
-| `infrastructure.config` | **100%** | `KafkaTopicConfig`, `KafkaStreamsConfig`, `OpenApiConfig`, `SecurityHeadersFilter`, `KafkaProperties` |
+| `infrastructure.config` | **100%** | `KafkaTopicConfig`, `KafkaStreamsConfig`, `OpenApiConfig`, `SecurityHeadersFilter`, `ApiKeyAuthFilter`, `RateLimitFilter` |
 | `infrastructure.streams` | **65%** | `OrderMetricsStream` — lambdas internas da DSL Kafka Streams só executam com mensagens reais |
 | `com.olivertech.orderservice` | **0%** | `OrderServiceApplication.main()` — coberto apenas no teste de integração |
 | **Total geral** | **~96%** | Medido com JaCoCo (`mvn verify`) |
@@ -345,16 +446,18 @@ GET http://localhost:8081/api/orders/{id}/status
 
 ## 🐳 Serviços Docker
 
-| Serviço | Porta | Descrição |
-|---|---|---|
-| PostgreSQL | `5433` | Banco de dados principal |
-| Kafka | `9092` | Broker de mensagens (KRaft, sem Zookeeper) |
-| Kafka UI | `8090` | Painel web de administração do Kafka |
+| Serviço | Porta | Acesso | Descrição |
+|---|---|---|---|
+| PostgreSQL | `127.0.0.1:5433` | Apenas localhost | Banco de dados principal |
+| Kafka | `127.0.0.1:9092` | Apenas localhost | Broker de mensagens (KRaft, sem Zookeeper) |
+| Kafka UI | `127.0.0.1:8090` | Apenas localhost | Painel web (requer login) |
+| App | `0.0.0.0:8081` | Externo | API REST do microsserviço |
 
 ### Comandos úteis do Docker
 
 ```powershell
 # Subir todos os serviços em background
+$env:KAFKA_UI_PASSWORD="sua-senha"
 docker-compose up -d
 
 # Ver logs em tempo real
@@ -379,20 +482,39 @@ As configurações ficam em `src/main/resources/application.properties`.
 | `spring.datasource.url` | `jdbc:postgresql://localhost:5433/orderdb` | URL do banco de dados |
 | `spring.datasource.username` | `postgres` | Usuário do banco — sobrescreva com `$PGUSER` |
 | `spring.datasource.password` | `postgres` | Senha do banco — sobrescreva com `$PGPASSWORD` |
+| `spring.jpa.hibernate.ddl-auto` | `validate` | Schema criado pelo `schema.sql`; Hibernate só valida (não cria tabelas) |
+| `spring.jpa.defer-datasource-initialization` | `false` | `schema.sql` executa **antes** do Hibernate — obrigatório com `ddl-auto=validate` |
 | `spring.kafka.bootstrap-servers` | `localhost:9092` | Endereço do Kafka |
 | `kafka.topics.orders` | `orders-topic` | Tópico principal de pedidos |
 | `kafka.partitions` | `3` | Número de partições dos tópicos |
 | `kafka.replicas` | `1` | Fator de replicação (1 para dev local) |
 | `management.server.port` | `9090` | Porta do Actuator (separada da API) |
 | `management.server.address` | `127.0.0.1` | Actuator acessível apenas localmente |
+| `management.endpoint.health.show-details` | `never` | Detalhes de infra nunca expostos em dev |
+| `api.security.key` | `dev-api-key-CHANGE-THIS-BEFORE-USE` | Chave da API — **trocar antes de usar** |
+| `security.headers.csp` | CSP permissivo para Swagger | Content-Security-Policy configurável por ambiente |
+| `security.headers.hsts.enabled` | `false` | HSTS desabilitado em dev (sem TLS) |
 
 Para produção, use o perfil `prod` com variáveis de ambiente (veja `application-prod.properties`):
 ```bash
-KAFKA_BOOTSTRAP_SERVERS=kafka:29092   # listener interno Docker (PLAINTEXT)
+KAFKA_BOOTSTRAP_SERVERS=kafka:29092
 DB_URL=jdbc:postgresql://postgres:5432/orderdb
 PGUSER=usuario
 PGPASSWORD=senha_segura
+API_KEY=chave-segura-producao
+KAFKA_UI_PASSWORD=senha-kafka-ui
 ```
+
+Diferenças do perfil `prod` em relação ao dev:
+
+| Comportamento | Dev | Prod |
+|---|---|---|
+| Swagger UI / API Docs | ✅ Habilitado | ❌ Desabilitado |
+| `spring.sql.init.mode` | `always` | `never` |
+| SSL no banco (sslmode) | — | `verify-full` |
+| Actuator health details | `never` | `when-authorized` (role `ACTUATOR_ADMIN`) |
+| HSTS | Desabilitado | Habilitado |
+| CSP | Permissivo (Swagger) | `default-src 'none'; frame-ancestors 'none'` |
 
 ---
 
@@ -436,13 +558,11 @@ Invoke-RestMethod http://localhost:9090/actuator/health
 Resposta esperada:
 ```json
 {
-  "status": "UP",
-  "components": {
-    "db": { "status": "UP" },
-    "kafka": { "status": "UP" }
-  }
+  "status": "UP"
 }
 ```
+
+> Em dev `show-details=never`. Para ver detalhes de componentes internos configure `show-details=always` localmente.
 
 ---
 
@@ -491,6 +611,32 @@ netstat -ano | findstr :8081
 Stop-Process -Id <PID>
 ```
 
+### API retornando 401 Unauthorized
+
+Verifique se o header `X-API-Key` está sendo enviado com o valor correto:
+```powershell
+# Teste rápido via PowerShell
+Invoke-RestMethod -Uri http://localhost:8081/api/orders `
+  -Headers @{ "X-API-Key" = "dev-api-key-CHANGE-THIS-BEFORE-USE" }
+```
+O valor da chave em dev está em `api.security.key` no `application.properties`.
+
+### API retornando 429 Too Many Requests
+
+O rate limiter bloqueou após 100 requisições/minuto. Aguarde 60 segundos (indicado no header `Retry-After: 60`).
+
+### docker-compose não sobe — KAFKA_UI_PASSWORD obrigatória
+
+```
+error: required variable KAFKA_UI_PASSWORD is not set
+```
+
+Defina a variável antes de subir:
+```powershell
+$env:KAFKA_UI_PASSWORD="senha-local-dev"
+docker-compose up -d
+```
+
 ### Limpeza de build corrompido (classes stale)
 
 ```powershell
@@ -512,13 +658,19 @@ Solução: garantir `KAFKA_BOOTSTRAP_SERVERS=kafka:29092` e `--network order-ser
 
 ### Schema não foi criado no banco
 
-O `schema.sql` é executado automaticamente no startup via `spring.sql.init.mode=always`. Se a tabela `orders` não existir, o log mostrará:
+O `schema.sql` é executado automaticamente no startup via `spring.sql.init.mode=always` (dev). Se a tabela `orders` não existir, o log mostrará:
 
 ```
 Executing SQL script from class path resource [schema.sql]
 ```
 
-Se isso não aparecer, verifique se `spring.jpa.defer-datasource-initialization=true` está ativo e se a conexão com o banco está saudável (`/actuator/health`).
+**Ordem de inicialização correta** (com `defer-datasource-initialization=false`):
+1. `schema.sql` executa → `CREATE TABLE IF NOT EXISTS orders`
+2. Hibernate valida o schema → tabela existe → ✅
+
+Se a aplicação falhar com `SchemaManagementException: missing table [orders]`, verifique se `spring.jpa.defer-datasource-initialization=false` está configurado em `application.properties` e se a conexão com o banco está saudável (`/actuator/health`).
+
+> **Em produção** `spring.sql.init.mode=never` — migrações devem ser feitas via Flyway/Liquibase.
 
 ### Teste de integração falha — Docker não encontrado
 
@@ -536,4 +688,4 @@ Solução: inicie o Docker Desktop e aguarde ele ficar totalmente disponível an
 
 ### Erros de log nos testes unitários
 
-Mensagens como `ERROR GlobalExceptionHandler — Erro inesperado` ou `ERROR OrderConsumer — [DLT]` aparecem no output dos testes são **esperadas** — fazem parte do comportamento testado. O `GlobalExceptionHandlerTest` propositalmente lança exceções para validar os handlers, e o `OrderConsumerTest` testa o caminho de erro do consumidor. Não indicam falha.
+Mensagens como `ERROR GlobalExceptionHandler — Erro inesperado`, `WARN RateLimitFilter — Rate limit excedido` ou `ERROR OrderConsumer — [DLT]` aparecem no output dos testes são **esperadas** — fazem parte do comportamento testado. Não indicam falha.

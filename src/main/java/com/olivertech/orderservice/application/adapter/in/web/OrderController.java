@@ -11,11 +11,13 @@ import com.olivertech.orderservice.domain.port.in.ListOrdersUseCase;
 import io.swagger.v3.oas.annotations.Operation;
 import io.swagger.v3.oas.annotations.Parameter;
 import io.swagger.v3.oas.annotations.responses.ApiResponse;
+import io.swagger.v3.oas.annotations.security.SecurityRequirement;
 import io.swagger.v3.oas.annotations.tags.Tag;
 import jakarta.validation.Valid;
 import jakarta.validation.constraints.Max;
 import jakarta.validation.constraints.Min;
 import jakarta.validation.constraints.Pattern;
+import jakarta.validation.constraints.Size;
 import org.springframework.http.HttpStatus;
 import org.springframework.http.ResponseEntity;
 import org.springframework.validation.annotation.Validated;
@@ -26,6 +28,7 @@ import java.util.List;
 @RestController
 @RequestMapping("/api/orders")
 @Tag(name = "Orders", description = "Endpoints de gestão de pedidos")
+@SecurityRequirement(name = "X-API-Key")
 @Validated
 public class OrderController {
 
@@ -85,6 +88,7 @@ public class OrderController {
     public ResponseEntity<OrderResponse> getOrder(
             @Parameter(description = "UUID v4 do pedido")
             @PathVariable
+            @Size(min = 36, max = 36, message = "ID deve ter exatamente 36 caracteres")
             @Pattern(regexp = UUID_V4_REGEXP, message = "ID deve ser um UUID v4 válido")
             String id) {
         return findOrderUseCase.execute(id)
@@ -100,6 +104,7 @@ public class OrderController {
     public ResponseEntity<OrderStatus> getStatus(
             @Parameter(description = "UUID v4 do pedido")
             @PathVariable
+            @Size(min = 36, max = 36, message = "ID deve ter exatamente 36 caracteres")
             @Pattern(regexp = UUID_V4_REGEXP, message = "ID deve ser um UUID v4 válido")
             String id) {
         return getOrderStatusUseCase.execute(id)
